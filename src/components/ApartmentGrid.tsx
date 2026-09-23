@@ -1,15 +1,14 @@
 import type { CSSProperties } from 'react'
 import {
-  APARTMENTS,
-  ENDINGS,
-  FLOOR_COUNT,
   STATUS_BY_ID,
   apartmentId,
   type ApartmentStatus,
+  type BuildingConfig,
   type Ending,
 } from '../config/building'
 
 type Props = {
+  config: BuildingConfig
   statuses: Record<string, ApartmentStatus>
   selectedId: string
   floorFilter: number | 'all'
@@ -21,6 +20,7 @@ type Props = {
 type StatusStyle = CSSProperties & { '--unit-color': string }
 
 export function ApartmentGrid({
+  config,
   statuses,
   selectedId,
   floorFilter,
@@ -30,11 +30,14 @@ export function ApartmentGrid({
 }: Props) {
   const floors =
     floorFilter === 'all'
-      ? Array.from({ length: FLOOR_COUNT }, (_, index) => FLOOR_COUNT - index)
+      ? Array.from(
+          { length: config.floorCount },
+          (_, index) => config.floorCount - index,
+        )
       : [floorFilter]
 
-  const endings = endingFilter === 'all' ? ENDINGS : [endingFilter]
-  const visibleCount = APARTMENTS.filter(
+  const endings = endingFilter === 'all' ? config.endings : [endingFilter]
+  const visibleCount = config.apartments.filter(
     ({ floor, ending, id }) =>
       (floorFilter === 'all' || floor === floorFilter) &&
       (endingFilter === 'all' || ending === endingFilter) &&
@@ -48,7 +51,12 @@ export function ApartmentGrid({
         <span>{visibleCount} exibidas</span>
       </div>
       <div className="inventory-table" aria-label="Apartamentos por andar">
-        <div className="grid-row grid-header">
+        <div
+          className="grid-row grid-header"
+          style={{
+            gridTemplateColumns: `45px repeat(${endings.length}, minmax(52px, 1fr))`,
+          }}
+        >
           <span>Andar</span>
           {endings.map((ending) => (
             <span key={ending}>
@@ -58,7 +66,13 @@ export function ApartmentGrid({
         </div>
 
         {floors.map((floor) => (
-          <div className="grid-row" key={floor}>
+          <div
+            className="grid-row"
+            key={floor}
+            style={{
+              gridTemplateColumns: `45px repeat(${endings.length}, minmax(52px, 1fr))`,
+            }}
+          >
             <span className="floor-number">
               {String(floor).padStart(2, '0')}º
             </span>
