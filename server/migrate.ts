@@ -3,6 +3,7 @@ import { randomUUID } from 'node:crypto'
 import bcrypt from 'bcryptjs'
 import { pool, transaction } from './db'
 import {
+  DEFAULT_EDGE_LANDMARKS,
   DEFAULT_SOLAR_ILLUSTRATIONS,
   DEFAULT_SURROUNDINGS,
 } from '../src/config/surroundings'
@@ -69,8 +70,15 @@ CREATE TABLE IF NOT EXISTS apartment_surroundings (
 CREATE TABLE IF NOT EXISTS apartment_solar_illustrations (
   building varchar(40) NOT NULL CHECK (building IN ('odd', 'even', 'jardim-artes', 'cond-iracema')),
   ending integer NOT NULL CHECK (ending BETWEEN 1 AND 8),
-  illustration varchar(20) NOT NULL CHECK (illustration IN ('sunrise', 'sunset')),
-  PRIMARY KEY (building, ending)
+  illustration varchar(20) NOT NULL CHECK (illustration IN ('sunrise', 'sunset', 'future-green')),
+  PRIMARY KEY (building, ending, illustration)
+);
+
+CREATE TABLE IF NOT EXISTS apartment_edge_landmarks (
+  building varchar(40) NOT NULL CHECK (building IN ('odd', 'even', 'jardim-artes', 'cond-iracema')),
+  ending integer NOT NULL CHECK (ending BETWEEN 1 AND 8),
+  landmark varchar(20) NOT NULL CHECK (landmark IN ('sao-judas', 'br-116', 'main-gate', 'bloco-b', 'bloco-c', 'blocos-gf', 'sunrise', 'sunset')),
+  PRIMARY KEY (building, ending, landmark)
 );
 
 ALTER TABLE apartment_reservations
@@ -94,6 +102,25 @@ ALTER TABLE apartment_solar_illustrations
 ALTER TABLE apartment_solar_illustrations
   ADD CONSTRAINT apartment_solar_illustrations_building_check
   CHECK (building IN ('odd', 'even', 'jardim-artes', 'cond-iracema'));
+ALTER TABLE apartment_solar_illustrations
+  DROP CONSTRAINT IF EXISTS apartment_solar_illustrations_illustration_check;
+ALTER TABLE apartment_solar_illustrations
+  ADD CONSTRAINT apartment_solar_illustrations_illustration_check
+  CHECK (illustration IN ('sunrise', 'sunset', 'future-green'));
+
+-- Cada final pode exibir mais de uma ilustração, então a chave inclui qual é.
+ALTER TABLE apartment_solar_illustrations
+  DROP CONSTRAINT IF EXISTS apartment_solar_illustrations_pkey;
+ALTER TABLE apartment_solar_illustrations
+  ADD CONSTRAINT apartment_solar_illustrations_pkey
+  PRIMARY KEY (building, ending, illustration);
+
+CREATE TABLE IF NOT EXISTS apartment_edge_landmarks (
+  building varchar(40) NOT NULL CHECK (building IN ('odd', 'even', 'jardim-artes', 'cond-iracema')),
+  ending integer NOT NULL CHECK (ending BETWEEN 1 AND 8),
+  landmark varchar(20) NOT NULL CHECK (landmark IN ('sao-judas', 'br-116', 'main-gate', 'bloco-b', 'bloco-c', 'blocos-gf', 'sunrise', 'sunset')),
+  PRIMARY KEY (building, ending, landmark)
+);
 
 CREATE TABLE IF NOT EXISTS draw_declines (
   id text PRIMARY KEY,
@@ -118,6 +145,21 @@ ALTER TABLE draw_declines
 ALTER TABLE draw_declines
   ADD CONSTRAINT draw_declines_building_check
   CHECK (building IN ('odd', 'even', 'jardim-artes', 'cond-iracema'));
+
+CREATE TABLE IF NOT EXISTS draw_archives (
+  id text PRIMARY KEY,
+  building varchar(40) NOT NULL CHECK (building IN ('odd', 'even', 'jardim-artes', 'cond-iracema')),
+  draw_group varchar(2),
+  title varchar(160) NOT NULL,
+  notes varchar(240) NOT NULL DEFAULT '',
+  reservation_count integer NOT NULL DEFAULT 0,
+  decline_count integer NOT NULL DEFAULT 0,
+  snapshot jsonb NOT NULL,
+  archived_by text REFERENCES app_users(id) ON DELETE SET NULL,
+  archived_at timestamptz NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS draw_archives_building_idx
+  ON draw_archives(building, archived_at DESC);
 `
 
 async function migrate() {
@@ -152,14 +194,30 @@ async function migrate() {
     for (const [building, endings] of Object.entries(
       DEFAULT_SOLAR_ILLUSTRATIONS,
     )) {
-      for (const [ending, illustration] of Object.entries(endings)) {
-        await client.query(
-          `INSERT INTO apartment_solar_illustrations
-            (building, ending, illustration)
-           VALUES ($1, $2, $3)
-           ON CONFLICT DO NOTHING`,
-          [building, Number(ending), illustration],
-        )
+      for (const [ending, illustrations] of Object.entries(endings)) {
+        for (const illustration of illustrations ?? []) {
+          await client.query(
+            `INSERT INTO apartment_solar_illustrations
+              (building, ending, illustration)
+             VALUES ($1, $2, $3)
+             ON CONFLICT DO NOTHING`,
+            [building, Number(ending), illustration],
+          )
+        }
+      }
+    }
+
+    for (const [building, endings] of Object.entries(DEFAULT_EDGE_LANDMARKS)) {
+      for (const [ending, landmarks] of Object.entries(endings)) {
+        for (const landmark of landmarks ?? []) {
+          await client.query(
+            `INSERT INTO apartment_edge_landmarks
+              (building, ending, landmark)
+             VALUES ($1, $2, $3)
+             ON CONFLICT DO NOTHING`,
+            [building, Number(ending), landmark],
+          )
+        }
       }
     }
   })

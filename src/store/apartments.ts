@@ -9,8 +9,11 @@ import {
   isApartmentStatus,
 } from '../config/building'
 import {
+  DEFAULT_EDGE_LANDMARKS,
   DEFAULT_SOLAR_ILLUSTRATIONS,
   DEFAULT_SURROUNDINGS,
+  type EdgeLandmark,
+  type EdgeLandmarksConfig,
   type SolarIllustration,
   type SolarIllustrationsConfig,
   type SurroundingItem,
@@ -52,6 +55,7 @@ type ApartmentStore = {
   auditLog: AuditEvent[]
   surroundings: SurroundingsConfig
   solarIllustrations: SolarIllustrationsConfig
+  edgeLandmarks: EdgeLandmarksConfig
   history: Snapshot[]
   setStatus: (ids: string[], status: ApartmentStatus) => void
   assignApartment: (
@@ -71,10 +75,15 @@ type ApartmentStore = {
     ending: Ending,
     items: SurroundingItem[],
   ) => void
-  setSolarIllustration: (
+  setSolarIllustrations: (
     building: BuildingKind,
     ending: Ending,
-    illustration?: SolarIllustration,
+    illustrations: SolarIllustration[],
+  ) => void
+  setEdgeLandmarks: (
+    building: BuildingKind,
+    ending: Ending,
+    landmarks: EdgeLandmark[],
   ) => void
   replaceData: (
     statuses: ApartmentStatuses,
@@ -82,6 +91,7 @@ type ApartmentStore = {
     auditLog?: AuditEvent[],
     surroundings?: SurroundingsConfig,
     solarIllustrations?: SolarIllustrationsConfig,
+    edgeLandmarks?: EdgeLandmarksConfig,
   ) => void
   clearAll: () => void
   undo: () => void
@@ -169,6 +179,10 @@ function cloneDefaultSolarIllustrations(): SolarIllustrationsConfig {
   return structuredClone(DEFAULT_SOLAR_ILLUSTRATIONS)
 }
 
+function cloneDefaultEdgeLandmarks(): EdgeLandmarksConfig {
+  return structuredClone(DEFAULT_EDGE_LANDMARKS)
+}
+
 function snapshot(
   statuses: ApartmentStatuses,
   assignments: ApartmentAssignments,
@@ -184,6 +198,7 @@ export const useApartmentStore = create<ApartmentStore>()(
       auditLog: [],
       surroundings: cloneDefaultSurroundings(),
       solarIllustrations: cloneDefaultSolarIllustrations(),
+      edgeLandmarks: cloneDefaultEdgeLandmarks(),
       history: [],
       setStatus: (ids, status) =>
         set((state) => {
@@ -319,17 +334,31 @@ export const useApartmentStore = create<ApartmentStore>()(
             },
           },
         })),
-      setSolarIllustration: (building, ending, illustration) =>
+      setSolarIllustrations: (building, ending, illustrations) =>
         set((state) => {
           const buildingIllustrations = {
             ...state.solarIllustrations[building],
           }
-          if (illustration) buildingIllustrations[ending] = illustration
+          if (illustrations.length) buildingIllustrations[ending] = illustrations
           else delete buildingIllustrations[ending]
           return {
             solarIllustrations: {
               ...state.solarIllustrations,
               [building]: buildingIllustrations,
+            },
+          }
+        }),
+      setEdgeLandmarks: (building, ending, landmarks) =>
+        set((state) => {
+          const buildingLandmarks = {
+            ...state.edgeLandmarks[building],
+          }
+          if (landmarks.length) buildingLandmarks[ending] = landmarks
+          else delete buildingLandmarks[ending]
+          return {
+            edgeLandmarks: {
+              ...state.edgeLandmarks,
+              [building]: buildingLandmarks,
             },
           }
         }),
@@ -339,6 +368,7 @@ export const useApartmentStore = create<ApartmentStore>()(
         auditLog = [],
         surroundings,
         solarIllustrations,
+        edgeLandmarks,
       ) =>
         set((state) => ({
           statuses: { ...statuses },
@@ -347,6 +377,7 @@ export const useApartmentStore = create<ApartmentStore>()(
           surroundings: surroundings ?? state.surroundings,
           solarIllustrations:
             solarIllustrations ?? state.solarIllustrations,
+          edgeLandmarks: edgeLandmarks ?? state.edgeLandmarks,
           history: [
             ...state.history.slice(-19),
             snapshot(state.statuses, state.assignments),
@@ -380,12 +411,14 @@ export const useApartmentStore = create<ApartmentStore>()(
         auditLog,
         surroundings,
         solarIllustrations,
+        edgeLandmarks,
       }) => ({
         statuses,
         assignments,
         auditLog,
         surroundings,
         solarIllustrations,
+        edgeLandmarks,
       }),
       merge: (persisted, current) => {
         const saved = persisted as
@@ -395,6 +428,7 @@ export const useApartmentStore = create<ApartmentStore>()(
               auditLog?: unknown
               surroundings?: unknown
               solarIllustrations?: unknown
+              edgeLandmarks?: unknown
             }
           | undefined
         const currentVersion = normalizeStatuses(saved?.statuses)
@@ -419,6 +453,12 @@ export const useApartmentStore = create<ApartmentStore>()(
               !Array.isArray(saved.solarIllustrations)
                 ? (saved.solarIllustrations as SolarIllustrationsConfig)
                 : cloneDefaultSolarIllustrations(),
+            edgeLandmarks:
+              saved?.edgeLandmarks &&
+              typeof saved.edgeLandmarks === 'object' &&
+              !Array.isArray(saved.edgeLandmarks)
+                ? (saved.edgeLandmarks as EdgeLandmarksConfig)
+                : cloneDefaultEdgeLandmarks(),
           }
         }
 

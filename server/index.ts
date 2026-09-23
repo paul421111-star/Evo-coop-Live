@@ -12,6 +12,9 @@ import express, {
 import rateLimit from 'express-rate-limit'
 import helmet from 'helmet'
 import type { PoolClient } from 'pg'
+import { BUILDING_CONFIGS } from '../src/config/building'
+import { isDrawGroup, validateAssociateCode } from '../src/config/drawGroups'
+import { EDGE_LANDMARK_IDS } from '../src/config/surroundings'
 import { pool, transaction } from './db'
 
 type SessionUser = {
@@ -29,7 +32,20 @@ const BUILDINGS: Building[] = [
   'jardim-artes',
   'cond-iracema',
 ]
-const SOLAR_ILLUSTRATIONS = ['sunrise', 'sunset'] as const
+const SOLAR_ILLUSTRATIONS = ['sunrise', 'sunset', 'future-green'] as const
+
+/** Mantém apenas ilustrações conhecidas, sem repetição e na ordem do catálogo. */
+function normalizeIllustrations(value: unknown) {
+  const list = Array.isArray(value) ? value.map(String) : []
+  return SOLAR_ILLUSTRATIONS.filter((illustration) =>
+    list.includes(illustration),
+  )
+}
+
+function normalizeLandmarks(value: unknown) {
+  const list = Array.isArray(value) ? value.map(String) : []
+  return EDGE_LANDMARK_IDS.filter((landmark) => list.includes(landmark))
+}
 const BUILDING_LIMITS: Record<
   Building,
   {
@@ -302,12 +318,80 @@ function declineData(row: Record<string, unknown>) {
   }
 }
 
+function archiveSummary(row: Record<string, unknown>) {
+  return {
+    id: String(row.id),
+    building: String(row.building),
+    drawGroup: row.draw_group ? String(row.draw_group) : null,
+    title: String(row.title),
+    notes: String(row.notes ?? ''),
+    archivedBy: String(row.archived_by_name ?? 'Administrador'),
+    archivedAt: new Date(String(row.archived_at)).toISOString(),
+    reservationCount: Number(row.reservation_count ?? 0),
+    declineCount: Number(row.decline_count ?? 0),
+  }
+}
+
+async function collectBuildingSnapshot(
+  client: PoolClient,
+  building: Building,
+) {
+  const reservationResult = await client.query(
+    `SELECT r.*, creator.username AS created_by_name,
+            updater.username AS updated_by_name
+       FROM apartment_reservations r
+       LEFT JOIN app_users creator ON creator.id = r.created_by
+       LEFT JOIN app_users updater ON updater.id = r.updated_by
+      WHERE r.building = $1`,
+    [building],
+  )
+  const declineResult = await client.query(
+    `SELECT d.*, creator.username AS created_by_name
+       FROM draw_declines d
+       LEFT JOIN app_users creator ON creator.id = d.created_by
+      WHERE d.building = $1
+      ORDER BY d.created_at DESC`,
+    [building],
+  )
+  const auditResult = await client.query(
+    `SELECT id, storage_id, action, actor_name, reason,
+            before_data, after_data, created_at
+       FROM audit_events
+      WHERE storage_id LIKE $1
+      ORDER BY created_at`,
+    [`${building}:%`],
+  )
+
+  const assignments: Record<string, unknown> = {}
+  for (const row of reservationResult.rows) {
+    assignments[row.storage_id] = reservationData(row)
+  }
+
+  return {
+    assignments,
+    declines: declineResult.rows.map(declineData),
+    auditLog: auditResult.rows.map((row) => ({
+      id: row.id,
+      apartmentId: row.storage_id,
+      action: row.action,
+      actor: row.actor_name,
+      timestamp: new Date(row.created_at).toISOString(),
+      reason: row.reason,
+      before: row.before_data ?? undefined,
+      after: row.after_data ?? undefined,
+    })),
+    reservationCount: reservationResult.rows.length,
+    declineCount: declineResult.rows.length,
+  }
+}
+
 app.get('/api/map', async (_request, response) => {
   const [
     reservationResult,
     auditResult,
     surroundingResult,
     solarIllustrationResult,
+    edgeLandmarkResult,
     declineResult,
   ] = await Promise.all([
     pool.query(
@@ -328,7 +412,13 @@ app.get('/api/map', async (_request, response) => {
     ),
     pool.query(
       `SELECT building, ending, illustration
-         FROM apartment_solar_illustrations ORDER BY building, ending`,
+         FROM apartment_solar_illustrations
+        ORDER BY building, ending, illustration`,
+    ),
+    pool.query(
+      `SELECT building, ending, landmark
+         FROM apartment_edge_landmarks
+        ORDER BY building, ending, landmark`,
     ),
     pool.query(
       `SELECT d.*, creator.username AS created_by_name
@@ -369,14 +459,27 @@ app.get('/api/map', async (_request, response) => {
       icon: row.icon,
     })
   }
-  const solarIllustrations: Record<string, Record<string, string>> = {
+  const solarIllustrations: Record<string, Record<string, string[]>> = {
     odd: {},
     even: {},
     'jardim-artes': {},
     'cond-iracema': {},
   }
   for (const row of solarIllustrationResult.rows) {
-    solarIllustrations[row.building][String(row.ending)] = row.illustration
+    const ending = String(row.ending)
+    solarIllustrations[row.building][ending] ??= []
+    solarIllustrations[row.building][ending].push(row.illustration)
+  }
+  const edgeLandmarks: Record<string, Record<string, string[]>> = {
+    odd: {},
+    even: {},
+    'jardim-artes': {},
+    'cond-iracema': {},
+  }
+  for (const row of edgeLandmarkResult.rows) {
+    const ending = String(row.ending)
+    edgeLandmarks[row.building][ending] ??= []
+    edgeLandmarks[row.building][ending].push(row.landmark)
   }
   response.json({
     statuses,
@@ -384,6 +487,7 @@ app.get('/api/map', async (_request, response) => {
     auditLog,
     surroundings,
     solarIllustrations,
+    edgeLandmarks,
     declines: declineResult.rows.map(declineData),
   })
 })
@@ -407,6 +511,13 @@ app.put(
     const reason = String(request.body?.reason ?? '').trim()
     if (!ball) {
       response.status(400).json({ error: 'Informe a bolinha sorteada.' })
+      return
+    }
+    if (!validateAssociateCode(building, ball)) {
+      response.status(400).json({
+        error:
+          'Código de associado inválido para o grupo desta torre. Use grupo + bolinha em 4 dígitos.',
+      })
       return
     }
     const declinedBall = await pool.query(
@@ -570,6 +681,14 @@ app.post(
             Record<string, unknown>
           >)
         : null
+    const edgeLandmarks =
+      request.body?.edgeLandmarks &&
+      typeof request.body.edgeLandmarks === 'object'
+        ? (request.body.edgeLandmarks as Record<
+            Building,
+            Record<string, unknown>
+          >)
+        : null
 
     await transaction(async (client) => {
       await client.query('DELETE FROM apartment_reservations')
@@ -637,22 +756,37 @@ app.post(
       if (solarIllustrations) {
         await client.query('DELETE FROM apartment_solar_illustrations')
         for (const building of BUILDINGS) {
-          for (const [ending, illustration] of Object.entries(
+          for (const [ending, illustrations] of Object.entries(
             solarIllustrations[building] ?? {},
           )) {
-            if (
-              !SOLAR_ILLUSTRATIONS.includes(
-                illustration as (typeof SOLAR_ILLUSTRATIONS)[number],
+            for (const illustration of normalizeIllustrations(illustrations)) {
+              await client.query(
+                `INSERT INTO apartment_solar_illustrations
+                  (building, ending, illustration)
+                 VALUES ($1, $2, $3)
+                 ON CONFLICT DO NOTHING`,
+                [building, Number(ending), illustration],
               )
-            ) {
-              continue
             }
-            await client.query(
-              `INSERT INTO apartment_solar_illustrations
-                (building, ending, illustration)
-               VALUES ($1, $2, $3)`,
-              [building, Number(ending), illustration],
-            )
+          }
+        }
+      }
+
+      if (edgeLandmarks) {
+        await client.query('DELETE FROM apartment_edge_landmarks')
+        for (const building of BUILDINGS) {
+          for (const [ending, landmarks] of Object.entries(
+            edgeLandmarks[building] ?? {},
+          )) {
+            for (const landmark of normalizeLandmarks(landmarks)) {
+              await client.query(
+                `INSERT INTO apartment_edge_landmarks
+                  (building, ending, landmark)
+                 VALUES ($1, $2, $3)
+                 ON CONFLICT DO NOTHING`,
+                [building, Number(ending), landmark],
+              )
+            }
           }
         }
       }
@@ -709,37 +843,69 @@ app.put(
   async (request: AuthRequest, response) => {
     const building = request.params.building as Building
     const ending = Number(request.params.ending)
-    const illustration = request.body?.illustration
     const endingLimit = BUILDING_LIMITS[building]?.endingCount
     if (
       !BUILDINGS.includes(building) ||
       !endingLimit ||
       ending < 1 ||
-      ending > endingLimit ||
-      (illustration !== null &&
-        !SOLAR_ILLUSTRATIONS.includes(
-          illustration as (typeof SOLAR_ILLUSTRATIONS)[number],
-        ))
+      ending > endingLimit
     ) {
-      response.status(400).json({ error: 'Ilustração solar inválida.' })
+      response.status(400).json({ error: 'Final inválido.' })
       return
     }
-    if (illustration === null) {
-      await pool.query(
+
+    const illustrations = normalizeIllustrations(request.body?.illustrations)
+    await transaction(async (client) => {
+      await client.query(
         'DELETE FROM apartment_solar_illustrations WHERE building = $1 AND ending = $2',
         [building, ending],
       )
-    } else {
-      await pool.query(
-        `INSERT INTO apartment_solar_illustrations
-          (building, ending, illustration)
-         VALUES ($1, $2, $3)
-         ON CONFLICT (building, ending)
-         DO UPDATE SET illustration = EXCLUDED.illustration`,
-        [building, ending, illustration],
-      )
+      for (const illustration of illustrations) {
+        await client.query(
+          `INSERT INTO apartment_solar_illustrations
+            (building, ending, illustration)
+           VALUES ($1, $2, $3)`,
+          [building, ending, illustration],
+        )
+      }
+    })
+    response.json({ illustrations })
+  },
+)
+
+app.put(
+  '/api/edge-landmarks/:building/:ending',
+  requireAdmin,
+  async (request: AuthRequest, response) => {
+    const building = request.params.building as Building
+    const ending = Number(request.params.ending)
+    const endingLimit = BUILDING_LIMITS[building]?.endingCount
+    if (
+      !BUILDINGS.includes(building) ||
+      !endingLimit ||
+      ending < 1 ||
+      ending > endingLimit
+    ) {
+      response.status(400).json({ error: 'Final inválido.' })
+      return
     }
-    response.json({ illustration })
+
+    const landmarks = normalizeLandmarks(request.body?.landmarks)
+    await transaction(async (client) => {
+      await client.query(
+        'DELETE FROM apartment_edge_landmarks WHERE building = $1 AND ending = $2',
+        [building, ending],
+      )
+      for (const landmark of landmarks) {
+        await client.query(
+          `INSERT INTO apartment_edge_landmarks
+            (building, ending, landmark)
+           VALUES ($1, $2, $3)`,
+          [building, ending, landmark],
+        )
+      }
+    })
+    response.json({ landmarks })
   },
 )
 
@@ -755,6 +921,13 @@ app.post(
     const notes = String(request.body?.notes ?? '').trim().slice(0, 240)
     if (!actor || !BUILDINGS.includes(building) || !ball) {
       response.status(400).json({ error: 'Informe a bolinha sorteada.' })
+      return
+    }
+    if (!validateAssociateCode(building, ball)) {
+      response.status(400).json({
+        error:
+          'Código de associado inválido para o grupo desta torre. Use grupo + bolinha em 4 dígitos.',
+      })
       return
     }
     if (!DECLINE_REASONS.includes(reason as (typeof DECLINE_REASONS)[number])) {
@@ -819,6 +992,112 @@ app.delete(
       return
     }
     response.status(204).end()
+  },
+)
+
+app.get(
+  '/api/draw-archives',
+  requireAdmin,
+  async (_request: AuthRequest, response) => {
+    const { rows } = await pool.query(
+      `SELECT a.*, u.username AS archived_by_name
+         FROM draw_archives a
+         LEFT JOIN app_users u ON u.id = a.archived_by
+        ORDER BY a.archived_at DESC`,
+    )
+    response.json({ archives: rows.map(archiveSummary) })
+  },
+)
+
+app.get(
+  '/api/draw-archives/:id',
+  requireAdmin,
+  async (request: AuthRequest, response) => {
+    const { rows } = await pool.query(
+      `SELECT a.*, u.username AS archived_by_name
+         FROM draw_archives a
+         LEFT JOIN app_users u ON u.id = a.archived_by
+        WHERE a.id = $1`,
+      [request.params.id],
+    )
+    if (!rows[0]) {
+      response.status(404).json({ error: 'Histórico não encontrado.' })
+      return
+    }
+    response.json({
+      ...archiveSummary(rows[0]),
+      snapshot: rows[0].snapshot,
+    })
+  },
+)
+
+app.post(
+  '/api/draw-archives/close',
+  requireAdmin,
+  async (request: AuthRequest, response) => {
+    const actor = request.user
+    const building = request.body?.building as Building
+    const notes = String(request.body?.notes ?? '').trim().slice(0, 240)
+    const requestedGroup = request.body?.drawGroup
+      ? String(request.body.drawGroup)
+      : null
+    if (!actor || !BUILDINGS.includes(building)) {
+      response.status(400).json({ error: 'Empreendimento inválido.' })
+      return
+    }
+    if (
+      (building === 'odd' || building === 'even') &&
+      !isDrawGroup(building, requestedGroup)
+    ) {
+      response.status(400).json({
+        error: 'Selecione o grupo que está sendo encerrado.',
+      })
+      return
+    }
+    const drawGroup =
+      building === 'odd' || building === 'even' ? requestedGroup : null
+    const buildingLabel = BUILDING_CONFIGS[building].label
+    const title = drawGroup ? `${buildingLabel} · G${drawGroup}` : buildingLabel
+
+    const archived = await transaction(async (client) => {
+      const snapshot = await collectBuildingSnapshot(client, building)
+      const id = randomUUID()
+      const { rows } = await client.query(
+        `INSERT INTO draw_archives
+          (id, building, draw_group, title, notes,
+           reservation_count, decline_count, snapshot, archived_by)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+         RETURNING *, $10::text AS archived_by_name`,
+        [
+          id,
+          building,
+          drawGroup,
+          title,
+          notes,
+          snapshot.reservationCount,
+          snapshot.declineCount,
+          JSON.stringify({
+            assignments: snapshot.assignments,
+            declines: snapshot.declines,
+            auditLog: snapshot.auditLog,
+          }),
+          actor.id,
+          actor.username,
+        ],
+      )
+      await client.query(
+        'DELETE FROM apartment_reservations WHERE building = $1',
+        [building],
+      )
+      await client.query('DELETE FROM draw_declines WHERE building = $1', [
+        building,
+      ])
+      await client.query('DELETE FROM audit_events WHERE storage_id LIKE $1', [
+        `${building}:%`,
+      ])
+      return archiveSummary(rows[0])
+    })
+    response.status(201).json(archived)
   },
 )
 

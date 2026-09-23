@@ -6,7 +6,11 @@ import {
   type BuildingConfig,
 } from '../config/building'
 import type { ApartmentAssignments, AuditEvent } from '../store/apartments'
-import type { SurroundingsConfig } from '../config/surroundings'
+import {
+  EDGE_LANDMARK_BY_ID,
+  type EdgeLandmarksConfig,
+  type SurroundingsConfig,
+} from '../config/surroundings'
 import {
   DECLINE_REASON_BY_ID,
   DECLINE_SOURCE_BY_ID,
@@ -19,6 +23,7 @@ type ReportInput = {
   assignments: ApartmentAssignments
   auditLog: AuditEvent[]
   surroundings: SurroundingsConfig
+  edgeLandmarks?: EdgeLandmarksConfig
   declines?: DrawDecline[]
 }
 
@@ -246,6 +251,7 @@ export async function generateBuildingPdf({
   assignments,
   auditLog,
   surroundings,
+  edgeLandmarks,
   declines = [],
 }: ReportInput) {
   const [{ jsPDF }, { default: autoTable }, logo] = await Promise.all([
@@ -332,7 +338,7 @@ export async function generateBuildingPdf({
         'Andar',
         'Final',
         'Situação',
-        'Bolinha / cota',
+        'Código associado',
         'Participante',
         'Incluído por',
         'Alterado por',
@@ -351,9 +357,14 @@ export async function generateBuildingPdf({
         assignment?.participant || '—',
         assignment?.createdBy || '—',
         assignment?.updatedBy || '—',
-        (surroundings[config.kind][apartment.ending] ?? [])
-          .map(({ label }) => label)
-          .join(', ') || '—',
+        [
+          ...(surroundings[config.kind][apartment.ending] ?? []).map(
+            ({ label }) => label,
+          ),
+          ...(edgeLandmarks?.[config.kind]?.[apartment.ending] ?? []).map(
+            (id) => EDGE_LANDMARK_BY_ID[id].label,
+          ),
+        ].join(', ') || '—',
       ]
     }),
     theme: 'plain',
@@ -420,7 +431,7 @@ export async function generateBuildingPdf({
       startY: cursor + 1,
       head: [
         [
-          'Bolinha / cota',
+          'Código associado',
           'Participante',
           'Origem',
           'Motivo',

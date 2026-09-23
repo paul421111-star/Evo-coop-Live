@@ -9,8 +9,16 @@ import {
   type DrawDeclineReason,
   type DrawDeclineSource,
 } from '../config/drawDeclines'
+import {
+  buildAssociateCode,
+  parseAssociateCode,
+  type DrawGroup,
+} from '../config/drawGroups'
+import type { BuildingKind } from '../config/building'
 
 type Props = {
+  building: BuildingKind
+  activeGroup?: DrawGroup
   items: DrawDecline[]
   busy: boolean
   error: string
@@ -25,6 +33,8 @@ type Props = {
 }
 
 export function DeclinedDrawsPanel({
+  building,
+  activeGroup,
   items,
   busy,
   error,
@@ -52,8 +62,11 @@ export function DeclinedDrawsPanel({
   }, [items, search])
 
   const submit = async () => {
+    const associateCode = activeGroup
+      ? buildAssociateCode(activeGroup, ball)
+      : ball.trim()
     const saved = await onAdd({
-      ball: ball.trim(),
+      ball: associateCode ?? '',
       participant: participant.trim(),
       source,
       reason,
@@ -84,15 +97,32 @@ export function DeclinedDrawsPanel({
 
       <div className="abdication-form">
         <label>
-          <span>Bolinha / cota *</span>
-          <input
-            value={ball}
-            onChange={(event) => setBall(event.target.value)}
-            placeholder="Ex.: 110396"
-            onKeyDown={(event) => {
-              if (event.key === 'Enter') void submit()
-            }}
-          />
+          <span>{activeGroup ? 'Bolinha sorteada *' : 'Código associado *'}</span>
+          <div className={activeGroup ? 'associate-code-input' : undefined}>
+            {activeGroup && <b>{activeGroup}</b>}
+            <input
+              value={ball}
+              inputMode={activeGroup ? 'numeric' : undefined}
+              maxLength={activeGroup ? 4 : undefined}
+              onChange={(event) =>
+                setBall(
+                  activeGroup
+                    ? event.target.value.replace(/\D/g, '').slice(0, 4)
+                    : event.target.value,
+                )
+              }
+              placeholder={activeGroup ? '0001' : 'Ex.: 110396'}
+              onKeyDown={(event) => {
+                if (event.key === 'Enter') void submit()
+              }}
+            />
+          </div>
+          {activeGroup && (
+            <small className="associate-code-preview">
+              Código associado:{' '}
+              <b>{buildAssociateCode(activeGroup, ball) ?? `${activeGroup}----`}</b>
+            </small>
+          )}
         </label>
         <label>
           <span>Nome</span>
@@ -160,7 +190,7 @@ export function DeclinedDrawsPanel({
           <input
             value={search}
             onChange={(event) => setSearch(event.target.value)}
-            placeholder="Buscar cota ou nome"
+            placeholder="Buscar código ou nome"
           />
         </label>
       </div>
@@ -169,7 +199,15 @@ export function DeclinedDrawsPanel({
         <ul className="abdication-list">
           {visibleItems.map((item) => (
             <li key={item.id}>
-              <span className="abdication-ball">{item.ball}</span>
+              <span className="abdication-ball">
+                {item.ball}
+                {parseAssociateCode(building, item.ball) && (
+                  <small>
+                    G{parseAssociateCode(building, item.ball)?.group} · Bolinha{' '}
+                    {parseAssociateCode(building, item.ball)?.ball}
+                  </small>
+                )}
+              </span>
               <div className="abdication-details">
                 <div>
                   <b>{item.participant || 'Participante não informado'}</b>
@@ -190,7 +228,7 @@ export function DeclinedDrawsPanel({
               <button
                 type="button"
                 className="icon-button"
-                aria-label={`Remover bolinha ${item.ball}`}
+                aria-label={`Remover associado ${item.ball}`}
                 disabled={busy}
                 onClick={() => void onRemove(item.id)}
               >

@@ -23,6 +23,14 @@ export type UnitPosition = {
   depth: number
 }
 
+/** Miolo de circulação (escadas e elevadores) destacado na planta. */
+export type PlanCore = {
+  x?: number
+  z?: number
+  width: number
+  depth: number
+}
+
 export type BuildingConfig = {
   kind: BuildingKind
   label: string
@@ -44,6 +52,7 @@ export type BuildingConfig = {
   optimizeExteriorOnly?: boolean
   hasEnvironmentLabels?: boolean
   unitPositions: Record<number, UnitPosition>
+  planCore?: PlanCore
 }
 
 export const STATUS_OPTIONS: ReadonlyArray<{
@@ -216,6 +225,7 @@ export const BUILDING_CONFIGS: Record<BuildingKind, BuildingConfig> = {
     floorPlanY: 3.02,
     hasEnvironmentLabels: true,
     unitPositions: ODD_UNIT_POSITIONS,
+    planCore: { z: 0.3, width: 7.4, depth: 6.4 },
   }),
   even: makeConfig({
     kind: 'even',
@@ -233,6 +243,7 @@ export const BUILDING_CONFIGS: Record<BuildingKind, BuildingConfig> = {
     optimizeExteriorOnly: true,
     hasEnvironmentLabels: true,
     unitPositions: EVEN_UNIT_POSITIONS,
+    planCore: { width: 7.2, depth: 7.2 },
   }),
   'jardim-artes': makeConfig({
     kind: 'jardim-artes',
@@ -250,6 +261,7 @@ export const BUILDING_CONFIGS: Record<BuildingKind, BuildingConfig> = {
     optimizeExteriorOnly: true,
     hasEnvironmentLabels: false,
     unitPositions: JARDIM_ARTES_UNIT_POSITIONS,
+    planCore: { width: 9.6, depth: 5.2 },
   }),
   'cond-iracema': makeConfig({
     kind: 'cond-iracema',
@@ -270,6 +282,7 @@ export const BUILDING_CONFIGS: Record<BuildingKind, BuildingConfig> = {
     optimizeExteriorOnly: true,
     hasEnvironmentLabels: false,
     unitPositions: IRACEMA_UNIT_POSITIONS,
+    planCore: { width: 6.2, depth: 6.2 },
   }),
 }
 

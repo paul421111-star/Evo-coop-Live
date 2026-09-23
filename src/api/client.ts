@@ -1,16 +1,23 @@
 import type { AppUser } from '../auth/localAuth'
 import type { BuildingKind, Ending } from '../config/building'
 import type {
+  EdgeLandmark,
+  EdgeLandmarksConfig,
   SolarIllustration,
   SolarIllustrationsConfig,
   SurroundingItem,
   SurroundingsConfig,
 } from '../config/surroundings'
 import type {
+  DrawArchive,
+  DrawArchiveSummary,
+} from '../config/drawArchives'
+import type {
   DrawDecline,
   DrawDeclineReason,
   DrawDeclineSource,
 } from '../config/drawDeclines'
+import type { DrawGroup } from '../config/drawGroups'
 import type {
   ApartmentAssignments,
   ApartmentStatuses,
@@ -23,6 +30,7 @@ export type MapSnapshot = {
   auditLog: AuditEvent[]
   surroundings: SurroundingsConfig
   solarIllustrations: SolarIllustrationsConfig
+  edgeLandmarks: EdgeLandmarksConfig
   declines?: DrawDecline[]
 }
 
@@ -108,16 +116,28 @@ export const api = {
         body: JSON.stringify({ items }),
       },
     ),
-  updateSolarIllustration: (
+  updateSolarIllustrations: (
     building: BuildingKind,
     ending: Ending,
-    illustration?: SolarIllustration,
+    illustrations: SolarIllustration[],
   ) =>
-    request<{ illustration: SolarIllustration | null }>(
+    request<{ illustrations: SolarIllustration[] }>(
       `/api/solar-illustrations/${building}/${ending}`,
       {
         method: 'PUT',
-        body: JSON.stringify({ illustration: illustration ?? null }),
+        body: JSON.stringify({ illustrations }),
+      },
+    ),
+  updateEdgeLandmarks: (
+    building: BuildingKind,
+    ending: Ending,
+    landmarks: EdgeLandmark[],
+  ) =>
+    request<{ landmarks: EdgeLandmark[] }>(
+      `/api/edge-landmarks/${building}/${ending}`,
+      {
+        method: 'PUT',
+        body: JSON.stringify({ landmarks }),
       },
     ),
   addDecline: (input: {
@@ -135,5 +155,18 @@ export const api = {
   removeDecline: (id: string) =>
     request<void>(`/api/declines/${encodeURIComponent(id)}`, {
       method: 'DELETE',
+    }),
+  listDrawArchives: () =>
+    request<{ archives: DrawArchiveSummary[] }>('/api/draw-archives'),
+  getDrawArchive: (id: string) =>
+    request<DrawArchive>(`/api/draw-archives/${encodeURIComponent(id)}`),
+  closeDrawSession: (input: {
+    building: BuildingKind
+    drawGroup?: DrawGroup
+    notes?: string
+  }) =>
+    request<DrawArchiveSummary>('/api/draw-archives/close', {
+      method: 'POST',
+      body: JSON.stringify(input),
     }),
 }

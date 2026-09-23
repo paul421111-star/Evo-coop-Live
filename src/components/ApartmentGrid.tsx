@@ -117,7 +117,7 @@ export function ApartmentGrid({
                     <b>{id}</b>
                   </span>
                   {assignment && (
-                    <small title={`Bolinha ${assignment.ball}`}>
+                    <small title={`Código associado ${assignment.ball}`}>
                       {assignment.ball}
                     </small>
                   )}

@@ -374,6 +374,37 @@ select:focus-visible {
   gap: 10px;
 }
 
+.draw-group-selector {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-left: auto;
+  padding: 5px 7px 5px 10px;
+  border: 1px solid #285466;
+  border-radius: 8px;
+  background: #0a2431;
+}
+
+.draw-group-selector span {
+  color: #8fb6c5;
+  font-size: 8px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.draw-group-selector select {
+  height: 29px;
+  padding: 0 22px 0 9px;
+  border: 1px solid #3a7180;
+  border-radius: 6px;
+  background: #123c49;
+  color: #d9fff9;
+  font-size: 11px;
+  font-weight: 800;
+  cursor: pointer;
+}
+
 .presentation-exit {
   height: 31px;
   display: flex;
@@ -654,7 +685,13 @@ select:focus-visible {
 
 .environment-north {
   top: 13px;
-  left: 13px;
+  left: 50%;
+  transform: translateX(-50%);
+}
+
+.environment-northeast {
+  top: 13px;
+  right: 13px;
 }
 
 .environment-east {
@@ -669,19 +706,34 @@ select:focus-visible {
   transform: translateX(-50%);
 }
 
+.environment-southwest {
+  bottom: 13px;
+  left: 13px;
+}
+
 .environment-west {
   top: 50%;
   left: 13px;
   transform: translateY(-50%);
 }
 
+.environment-point.is-active {
+  border-color: rgb(94 208 160 / 42%);
+}
+
+.environment-point.is-muted {
+  opacity: 0.4;
+}
+
 .environment-east > svg:first-child,
-.environment-north > svg:first-child {
+.environment-north > svg:first-child,
+.environment-northeast > svg:first-child {
   color: #69d5a5;
 }
 
 .environment-south > svg:first-child,
-.environment-west > svg:first-child {
+.environment-west > svg:first-child,
+.environment-southwest > svg:first-child {
   color: #8eb0c1;
 }
 
@@ -710,6 +762,11 @@ select:focus-visible {
   transform: translateX(-50%);
 }
 
+.is-plan .environment-northeast {
+  top: 60px;
+  right: 10px;
+}
+
 .is-plan .environment-east {
   right: 10px;
 }
@@ -720,6 +777,11 @@ select:focus-visible {
 
 .is-plan .environment-south {
   bottom: 10px;
+}
+
+.is-plan .environment-southwest {
+  bottom: 10px;
+  left: 10px;
 }
 
 .is-plan .site-compass i {
@@ -1204,6 +1266,42 @@ select:focus-visible {
   font-size: 9px;
 }
 
+.associate-code-input {
+  display: flex;
+  align-items: stretch;
+}
+
+.associate-code-input > b {
+  min-width: 42px;
+  display: grid;
+  place-items: center;
+  border: 1px solid #71aaa5;
+  border-right: 0;
+  border-radius: 7px 0 0 7px;
+  background: #e8f6f4;
+  color: #17655f;
+  font: 800 12px 'Manrope', sans-serif;
+}
+
+.associate-code-input input {
+  flex: 1;
+  border-radius: 0 7px 7px 0;
+  letter-spacing: 0.08em;
+  font-weight: 700;
+}
+
+.associate-code-preview {
+  display: block;
+  margin-top: 4px;
+  color: #75838e;
+  font-size: 7px;
+}
+
+.associate-code-preview b {
+  color: #17655f;
+  letter-spacing: 0.08em;
+}
+
 .abdication-notes,
 .abdication-add-button {
   grid-column: 1 / -1;
@@ -1287,11 +1385,20 @@ select:focus-visible {
 }
 
 .abdication-ball {
+  display: flex;
+  flex-direction: column;
   padding: 5px 7px;
   border-radius: 7px;
   background: #edf7ef;
   color: #328147;
   font: 700 10px 'Manrope', sans-serif;
+}
+
+.abdication-ball small {
+  margin-top: 2px;
+  color: #668b70;
+  font-size: 6px;
+  white-space: nowrap;
 }
 
 .abdication-details {
@@ -1568,17 +1675,10 @@ select:focus-visible {
   margin-top: 7px;
 }
 
-.unit-indication-tags > span {
-  display: flex;
-  align-items: center;
-  gap: 5px;
-  padding: 6px 8px;
-  border: 1px solid #cfe1df;
-  border-radius: 999px;
-  background: #f2faf9;
-  color: #315f5b;
-  font-size: 8px;
-  font-weight: 600;
+.unit-indication-tags > span.is-edge {
+  border-color: #d7c9a6;
+  background: #fff8ea;
+  color: #6a4e16;
 }
 
 .solar-illustration-card {
@@ -1623,12 +1723,22 @@ select:focus-visible {
 
 /* A ilustração fica ancorada na área do modelo para continuar visível
    enquanto o painel lateral é rolado. */
-.canvas-solar-card {
-  width: 172px;
+/* Faixa inferior da área do modelo: espaço livre que não cobre a planta. */
+.canvas-solar-stack {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 8px;
   position: absolute;
   z-index: 4;
-  top: 62px;
+  left: 14px;
   right: 14px;
+  bottom: 14px;
+  pointer-events: none;
+}
+
+.canvas-solar-card {
+  width: 124px;
   margin: 0;
   border-color: rgb(125 165 187 / 28%);
   background: rgb(5 17 29 / 88%);
@@ -1637,8 +1747,16 @@ select:focus-visible {
 }
 
 .canvas-solar-card figcaption {
-  gap: 6px;
-  padding: 6px 8px;
+  gap: 5px;
+  padding: 5px 7px;
+}
+
+/* As etiquetas do rodapé sobem para liberar a faixa das ilustrações. */
+.floor-plan-view:has(.canvas-solar-stack) .is-plan .environment-south,
+.floor-plan-view:has(.canvas-solar-stack) .is-plan .environment-southwest,
+.canvas-wrap:has(> .canvas-solar-stack) .environment-south,
+.canvas-wrap:has(> .canvas-solar-stack) .environment-southwest {
+  bottom: 126px;
 }
 
 .register-draw-button {
@@ -2136,6 +2254,132 @@ select:focus-visible {
   margin-top: 13px;
 }
 
+.archive-live-card {
+  display: grid;
+  gap: 8px;
+  margin-top: 14px;
+  padding: 12px;
+  border: 1px solid #dce8e7;
+  border-radius: 10px;
+  background: #f4faf9;
+}
+
+.archive-live-card > div:first-child {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.archive-live-card b {
+  color: #1c4b47;
+  font-size: 12px;
+}
+
+.archive-live-card small {
+  color: #5f7a76;
+  font-size: 8px;
+}
+
+.archive-live-card label {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.archive-live-card label > span {
+  color: #6a7d79;
+  font-size: 7px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.archive-live-card input,
+.archive-live-card select {
+  height: 34px;
+  padding: 0 9px;
+  border: 1px solid #bad9d6;
+  border-radius: 7px;
+  background: white;
+  color: #315f5b;
+  font-size: 10px;
+}
+
+.archive-close-button {
+  height: 36px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  border: 0;
+  border-radius: 8px;
+  background: #0f766e;
+  color: white;
+  font-size: 10px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.archive-close-button:disabled {
+  cursor: wait;
+  opacity: 0.65;
+}
+
+.archive-list {
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+  margin-top: 12px;
+  max-height: 240px;
+  overflow-y: auto;
+}
+
+.archive-list article {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 8px;
+  align-items: center;
+  padding: 9px 10px;
+  border: 1px solid #dce8e7;
+  border-radius: 8px;
+  background: white;
+}
+
+.archive-list b {
+  display: block;
+  color: #1c4b47;
+  font-size: 10px;
+}
+
+.archive-list small,
+.archive-list p {
+  display: block;
+  margin: 2px 0 0;
+  color: #6b7c78;
+  font-size: 8px;
+}
+
+.archive-list button {
+  height: 30px;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 0 8px;
+  border: 1px solid #bad9d6;
+  border-radius: 7px;
+  background: #edf9f7;
+  color: var(--teal-dark);
+  font-size: 8px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.archive-empty {
+  margin: 10px 0 0;
+  color: #7a8b87;
+  font-size: 9px;
+}
+
 .user-list > div {
   display: flex;
   align-items: center;
@@ -2230,6 +2474,7 @@ select:focus-visible {
 .solar-config-row {
   display: grid;
   grid-template-columns: minmax(100px, 1fr) auto;
+  align-items: start;
   gap: 5px;
   margin-bottom: 8px;
   padding: 7px;
@@ -2238,7 +2483,43 @@ select:focus-visible {
   background: #f4faf9;
 }
 
-.solar-config-row select,
+.solar-option-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  min-width: 0;
+}
+
+.solar-option {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 0 7px;
+  height: 30px;
+  border: 1px solid #bad9d6;
+  border-radius: 7px;
+  background: white;
+  color: #315f5b;
+  font-size: 8px;
+  font-weight: 600;
+  cursor: pointer;
+  user-select: none;
+}
+
+.solar-option.is-active {
+  border-color: var(--teal);
+  background: #dff3f0;
+  color: #1c4b47;
+}
+
+.solar-option input {
+  width: 11px;
+  height: 11px;
+  margin: 0;
+  accent-color: var(--teal);
+  cursor: pointer;
+}
+
 .solar-config-row button {
   min-width: 0;
   height: 30px;

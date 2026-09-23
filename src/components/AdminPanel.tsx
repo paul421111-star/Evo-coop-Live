@@ -1,15 +1,31 @@
 import { useEffect, useState } from 'react'
-import { Plus, Save, Trash2, UserPlus, Users, X } from 'lucide-react'
+import { Archive, FileText, Plus, Save, Trash2, UserPlus, Users, X } from 'lucide-react'
 import {
   createOperator,
   listUsers,
   removeOperator,
   type AppUser,
 } from '../auth/localAuth'
-import { BUILDING_CONFIGS, type BuildingKind, type Ending } from '../config/building'
+import { api } from '../api/client'
 import {
+  BUILDING_CONFIGS,
+  apartmentStorageId,
+  type ApartmentStatus,
+  type BuildingKind,
+  type Ending,
+} from '../config/building'
+import type { DrawArchiveSummary } from '../config/drawArchives'
+import type { DrawDecline } from '../config/drawDeclines'
+import {
+  drawGroupsForBuilding,
+  type DrawGroup,
+} from '../config/drawGroups'
+import {
+  EDGE_LANDMARK_OPTIONS,
   SOLAR_ILLUSTRATION_OPTIONS,
   SURROUNDING_ICON_OPTIONS,
+  type EdgeLandmark,
+  type EdgeLandmarksConfig,
   type SolarIllustration,
   type SolarIllustrationsConfig,
   type SurroundingIcon as IconName,
@@ -18,10 +34,13 @@ import {
 } from '../config/surroundings'
 import { SurroundingIcon } from './SurroundingIcon'
 import { createLocalId } from '../utils/localCrypto'
+import type { ApartmentAssignments } from '../store/apartments'
+import { generateBuildingPdf } from '../utils/pdfReport'
 
 type Props = {
   surroundings: SurroundingsConfig
   solarIllustrations: SolarIllustrationsConfig
+  edgeLandmarks: EdgeLandmarksConfig
   onUpdate: (
     building: BuildingKind,
     ending: Ending,
@@ -30,16 +49,33 @@ type Props = {
   onSaveSolar: (
     building: BuildingKind,
     ending: Ending,
-    illustration?: SolarIllustration,
+    illustrations: SolarIllustration[],
   ) => Promise<void>
+  onSaveEdge: (
+    building: BuildingKind,
+    ending: Ending,
+    landmarks: EdgeLandmark[],
+  ) => Promise<void>
+  mapBuilding: BuildingKind
+  activeGroup?: DrawGroup
+  assignments: ApartmentAssignments
+  declines: DrawDecline[]
+  onArchived: (building: BuildingKind, group?: DrawGroup) => Promise<void>
   onClose: () => void
 }
 
 export function AdminPanel({
   surroundings,
   solarIllustrations,
+  edgeLandmarks,
   onUpdate,
   onSaveSolar,
+  onSaveEdge,
+  mapBuilding,
+  activeGroup,
+  assignments,
+  declines,
+  onArchived,
   onClose,
 }: Props) {
   const [users, setUsers] = useState<AppUser[]>([])
@@ -50,12 +86,42 @@ export function AdminPanel({
   const [solarDrafts, setSolarDrafts] = useState<SolarIllustrationsConfig>(
     () => structuredClone(solarIllustrations),
   )
+  const [edgeDrafts, setEdgeDrafts] = useState<EdgeLandmarksConfig>(
+    () => structuredClone(edgeLandmarks),
+  )
   const [solarStatus, setSolarStatus] = useState<
     Partial<Record<string, 'saving' | 'saved' | 'error'>>
   >({})
+  const [edgeStatus, setEdgeStatus] = useState<
+    Partial<Record<string, 'saving' | 'saved' | 'error'>>
+  >({})
+  const [archives, setArchives] = useState<DrawArchiveSummary[]>([])
+  const [archiveNotes, setArchiveNotes] = useState('')
+  const [archiveGroup, setArchiveGroup] = useState<DrawGroup | undefined>()
+  const [archiveBusy, setArchiveBusy] = useState(false)
+  const [archiveError, setArchiveError] = useState('')
+  const [exportingId, setExportingId] = useState<string | null>(null)
+
+  const archiveGroups = drawGroupsForBuilding(building)
+  const resolvedArchiveGroup =
+    archiveGroup && archiveGroups.includes(archiveGroup)
+      ? archiveGroup
+      : building === mapBuilding
+        ? activeGroup
+        : archiveGroups[0]
+  const liveReservationCount = Object.keys(assignments).filter((id) =>
+    id.startsWith(`${building}:`),
+  ).length
+  const liveDeclineCount = declines.filter(
+    (item) => item.building === building,
+  ).length
 
   useEffect(() => {
     void listUsers().then(setUsers)
+    void api
+      .listDrawArchives()
+      .then((payload) => setArchives(payload.archives))
+      .catch(() => setArchives([]))
   }, [])
 
   const addUser = async () => {
@@ -111,14 +177,17 @@ export function AdminPanel({
     ])
   }
 
-  const updateSolarDraft = (
-    ending: Ending,
-    illustration?: SolarIllustration,
-  ) => {
+  const toggleSolarDraft = (ending: Ending, illustration: SolarIllustration) => {
+    const current = solarDrafts[building][ending] ?? []
+    const selected = current.includes(illustration)
+      ? current.filter((item) => item !== illustration)
+      : SOLAR_ILLUSTRATION_OPTIONS.map((option) => option.id).filter(
+          (id) => id === illustration || current.includes(id),
+        )
     const next = { ...solarDrafts[building] }
-    if (illustration) next[ending] = illustration
+    if (selected.length) next[ending] = selected
     else delete next[ending]
-    setSolarDrafts((current) => ({ ...current, [building]: next }))
+    setSolarDrafts((state) => ({ ...state, [building]: next }))
     setSolarStatus((current) => {
       const nextStatus = { ...current }
       delete nextStatus[`${building}:${ending}`]
@@ -130,10 +199,108 @@ export function AdminPanel({
     const key = `${building}:${ending}`
     setSolarStatus((current) => ({ ...current, [key]: 'saving' }))
     try {
-      await onSaveSolar(building, ending, solarDrafts[building][ending])
+      await onSaveSolar(building, ending, solarDrafts[building][ending] ?? [])
       setSolarStatus((current) => ({ ...current, [key]: 'saved' }))
     } catch {
       setSolarStatus((current) => ({ ...current, [key]: 'error' }))
+    }
+  }
+
+  const toggleEdgeDraft = (ending: Ending, landmark: EdgeLandmark) => {
+    const current = edgeDrafts[building][ending] ?? []
+    const selected = current.includes(landmark)
+      ? current.filter((item) => item !== landmark)
+      : EDGE_LANDMARK_OPTIONS.map((option) => option.id).filter(
+          (id) => id === landmark || current.includes(id),
+        )
+    const next = { ...edgeDrafts[building] }
+    if (selected.length) next[ending] = selected
+    else delete next[ending]
+    setEdgeDrafts((state) => ({ ...state, [building]: next }))
+    setEdgeStatus((current) => {
+      const nextStatus = { ...current }
+      delete nextStatus[`${building}:${ending}`]
+      return nextStatus
+    })
+  }
+
+  const saveEdge = async (ending: Ending) => {
+    const key = `${building}:${ending}`
+    setEdgeStatus((current) => ({ ...current, [key]: 'saving' }))
+    try {
+      await onSaveEdge(building, ending, edgeDrafts[building][ending] ?? [])
+      setEdgeStatus((current) => ({ ...current, [key]: 'saved' }))
+    } catch {
+      setEdgeStatus((current) => ({ ...current, [key]: 'error' }))
+    }
+  }
+
+  const archiveSession = async () => {
+    const groupLabel = resolvedArchiveGroup ? ` G${resolvedArchiveGroup}` : ''
+    if (
+      !window.confirm(
+        `Arquivar ${BUILDING_CONFIGS[building].label}${groupLabel} e limpar o mapa ao vivo? Os dados atuais ficam no histórico.`,
+      )
+    ) {
+      return
+    }
+    setArchiveBusy(true)
+    setArchiveError('')
+    try {
+      const created = await api.closeDrawSession({
+        building,
+        drawGroup: resolvedArchiveGroup,
+        notes: archiveNotes,
+      })
+      setArchives((current) => [created, ...current])
+      setArchiveNotes('')
+      await onArchived(building, resolvedArchiveGroup)
+    } catch (error) {
+      setArchiveError(
+        error instanceof Error
+          ? error.message
+          : 'Não foi possível arquivar o sorteio.',
+      )
+    } finally {
+      setArchiveBusy(false)
+    }
+  }
+
+  const exportArchive = async (id: string) => {
+    setExportingId(id)
+    setArchiveError('')
+    try {
+      const archive = await api.getDrawArchive(id)
+      const config = BUILDING_CONFIGS[archive.building]
+      const statuses = Object.fromEntries(
+        config.apartments.map((apartment) => {
+          const storageId = apartmentStorageId(
+            archive.building,
+            apartment.id,
+          )
+          return [
+            apartment.id,
+            archive.snapshot.assignments[storageId] ? 'reserved' : 'none',
+          ]
+        }),
+      ) as Record<string, ApartmentStatus>
+      await generateBuildingPdf({
+        config,
+        statuses,
+        assignments: archive.snapshot.assignments,
+        auditLog: archive.snapshot.auditLog,
+        surroundings,
+        edgeLandmarks,
+        declines: archive.snapshot.declines,
+      })
+    } catch (error) {
+      setArchiveError(
+        error instanceof Error
+          ? error.message
+          : 'Não foi possível gerar o PDF do histórico.',
+      )
+    } finally {
+      setExportingId(null)
     }
   }
 
@@ -211,12 +378,107 @@ export function AdminPanel({
           </div>
         </section>
 
+        <section className="admin-section">
+          <div className="admin-section-title">
+            <Archive size={17} />
+            <div>
+              <h3>Encerrar grupo e histórico</h3>
+              <p>
+                Guarda reservas, abdicações e auditoria, depois limpa o mapa
+                para o próximo sorteio.
+              </p>
+            </div>
+          </div>
+          <div className="archive-live-card">
+            <div>
+              <b>
+                {BUILDING_CONFIGS[building].label}
+                {resolvedArchiveGroup ? ` · G${resolvedArchiveGroup}` : ''}
+              </b>
+              <small>
+                {liveReservationCount} reservas · {liveDeclineCount} abdicações
+                no mapa ao vivo
+              </small>
+            </div>
+            {archiveGroups.length > 0 && (
+              <label>
+                <span>Grupo encerrado</span>
+                <select
+                  value={resolvedArchiveGroup ?? ''}
+                  onChange={(event) =>
+                    setArchiveGroup(event.target.value as DrawGroup)
+                  }
+                >
+                  {archiveGroups.map((group) => (
+                    <option value={group} key={group}>
+                      G{group}
+                    </option>
+                  ))}
+                </select>
+              </label>
+            )}
+            <label className="archive-notes">
+              <span>Observação</span>
+              <input
+                value={archiveNotes}
+                onChange={(event) => setArchiveNotes(event.target.value)}
+                placeholder="Opcional, ex.: encerramento do G12"
+              />
+            </label>
+            <button
+              type="button"
+              className="archive-close-button"
+              disabled={archiveBusy}
+              onClick={() => void archiveSession()}
+            >
+              <Archive size={14} />
+              {archiveBusy ? 'Arquivando' : 'Arquivar e limpar mapa'}
+            </button>
+          </div>
+          {archiveError && <p className="admin-error">{archiveError}</p>}
+          <div className="archive-list">
+            {archives.filter((item) => item.building === building).length ===
+            0 ? (
+              <p className="archive-empty">Nenhum grupo arquivado ainda.</p>
+            ) : (
+              archives
+                .filter((item) => item.building === building)
+                .map((item) => (
+                <article key={item.id}>
+                  <div>
+                    <b>{item.title}</b>
+                    <small>
+                      {item.reservationCount} reservas · {item.declineCount}{' '}
+                      abdicações ·{' '}
+                      {new Intl.DateTimeFormat('pt-BR', {
+                        dateStyle: 'short',
+                        timeStyle: 'short',
+                      }).format(new Date(item.archivedAt))}{' '}
+                      · {item.archivedBy}
+                    </small>
+                    {item.notes && <p>{item.notes}</p>}
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => void exportArchive(item.id)}
+                    disabled={exportingId === item.id}
+                    aria-label={`Gerar PDF de ${item.title}`}
+                  >
+                    <FileText size={14} />
+                    {exportingId === item.id ? 'Gerando' : 'PDF'}
+                  </button>
+                </article>
+              ))
+            )}
+          </div>
+        </section>
+
         <section className="admin-section indications-admin">
           <div className="admin-section-title">
             <SurroundingIcon icon="park" size={17} />
             <div>
               <h3>Indicações por final</h3>
-              <p>Personalize as informações exibidas ao lado da unidade.</p>
+              <p>Personalize ilustrações, bordas e indicações de cada final.</p>
             </div>
           </div>
           <div className="admin-building-tabs">
@@ -225,7 +487,10 @@ export function AdminPanel({
                 type="button"
                 key={kind}
                 className={building === kind ? 'active' : ''}
-                onClick={() => setBuilding(kind)}
+                onClick={() => {
+                  setBuilding(kind)
+                  setArchiveGroup(undefined)
+                }}
               >
                 {BUILDING_CONFIGS[kind].label}
               </button>
@@ -241,25 +506,31 @@ export function AdminPanel({
                   </button>
                 </header>
                 <div className="solar-config-row">
-                  <select
-                    value={solarDrafts[building][ending] ?? ''}
-                    onChange={(event) =>
-                      updateSolarDraft(
-                        ending,
-                        (event.target.value || undefined) as
-                          | SolarIllustration
-                          | undefined,
-                      )
-                    }
-                    aria-label={`Ilustração solar do final ${ending}`}
+                  <div
+                    className="solar-option-list"
+                    role="group"
+                    aria-label={`Ilustrações do final ${ending}`}
                   >
-                    <option value="">Sem ilustração</option>
-                    {SOLAR_ILLUSTRATION_OPTIONS.map((option) => (
-                      <option value={option.id} key={option.id}>
-                        {option.label}
-                      </option>
-                    ))}
-                  </select>
+                    {SOLAR_ILLUSTRATION_OPTIONS.map((option) => {
+                      const checked = (
+                        solarDrafts[building][ending] ?? []
+                      ).includes(option.id)
+                      return (
+                        <label
+                          className={`solar-option${checked ? ' is-active' : ''}`}
+                          key={option.id}
+                        >
+                          <input
+                            type="checkbox"
+                            checked={checked}
+                            onChange={() => toggleSolarDraft(ending, option.id)}
+                          />
+                          <SurroundingIcon icon={option.icon} size={13} />
+                          {option.label}
+                        </label>
+                      )
+                    })}
+                  </div>
                   <button
                     type="button"
                     onClick={() => void saveSolar(ending)}
@@ -272,9 +543,53 @@ export function AdminPanel({
                       ? 'Salvando'
                       : solarStatus[`${building}:${ending}`] === 'saved'
                         ? 'Salvo'
-                        : 'Salvar ilustração'}
+                        : 'Salvar ilustrações'}
                   </button>
                   {solarStatus[`${building}:${ending}`] === 'error' && (
+                    <small>Não foi possível salvar.</small>
+                  )}
+                </div>
+                <div className="solar-config-row">
+                  <div
+                    className="solar-option-list"
+                    role="group"
+                    aria-label={`Informações de borda do final ${ending}`}
+                  >
+                    {EDGE_LANDMARK_OPTIONS.map((option) => {
+                      const checked = (
+                        edgeDrafts[building][ending] ?? []
+                      ).includes(option.id)
+                      return (
+                        <label
+                          className={`solar-option${checked ? ' is-active' : ''}`}
+                          key={option.id}
+                        >
+                          <input
+                            type="checkbox"
+                            checked={checked}
+                            onChange={() => toggleEdgeDraft(ending, option.id)}
+                          />
+                          <SurroundingIcon icon={option.icon} size={13} />
+                          {option.label}
+                        </label>
+                      )
+                    })}
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => void saveEdge(ending)}
+                    disabled={
+                      edgeStatus[`${building}:${ending}`] === 'saving'
+                    }
+                  >
+                    <Save size={13} />
+                    {edgeStatus[`${building}:${ending}`] === 'saving'
+                      ? 'Salvando'
+                      : edgeStatus[`${building}:${ending}`] === 'saved'
+                        ? 'Salvo'
+                        : 'Salvar bordas'}
+                  </button>
+                  {edgeStatus[`${building}:${ending}`] === 'error' && (
                     <small>Não foi possível salvar.</small>
                   )}
                 </div>

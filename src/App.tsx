@@ -41,7 +41,18 @@ import {
   type Ending,
 } from './config/building'
 import type { DrawDecline } from './config/drawDeclines'
-import { SOLAR_ILLUSTRATION_BY_ID } from './config/surroundings'
+import {
+  buildAssociateCode,
+  drawGroupsForBuilding,
+  nextDrawGroup,
+  parseAssociateCode,
+  type DrawGroup,
+} from './config/drawGroups'
+import {
+  EDGE_LANDMARK_BY_ID,
+  SOLAR_ILLUSTRATION_BY_ID,
+  edgeLandmarksForBuilding,
+} from './config/surroundings'
 import {
   useApartmentStore,
   type ApartmentAssignments,
@@ -66,20 +77,41 @@ function App() {
   const solarIllustrations = useApartmentStore(
     (state) => state.solarIllustrations,
   )
+  const edgeLandmarks = useApartmentStore((state) => state.edgeLandmarks)
   const saveReservation = useApartmentStore((state) => state.saveReservation)
   const removeReservation = useApartmentStore(
     (state) => state.removeReservation,
   )
   const setSurroundings = useApartmentStore((state) => state.setSurroundings)
-  const setSolarIllustration = useApartmentStore(
-    (state) => state.setSolarIllustration,
+  const setSolarIllustrations = useApartmentStore(
+    (state) => state.setSolarIllustrations,
   )
+  const setEdgeLandmarks = useApartmentStore((state) => state.setEdgeLandmarks)
   const replaceData = useApartmentStore((state) => state.replaceData)
 
   const [authReady, setAuthReady] = useState(false)
   const [currentUser, setCurrentUser] = useState<AppUser | null>(null)
   const [adminOpen, setAdminOpen] = useState(false)
   const [building, setBuilding] = useState<BuildingKind>('odd')
+  const [activeDrawGroups, setActiveDrawGroups] = useState<
+    Record<'odd' | 'even', DrawGroup>
+  >(() => {
+    try {
+      const saved = JSON.parse(
+        window.localStorage.getItem('evo-coop-active-draw-groups') ?? '{}',
+      ) as Partial<Record<'odd' | 'even', DrawGroup>>
+      return {
+        odd: drawGroupsForBuilding('odd').includes(saved.odd as DrawGroup)
+          ? (saved.odd as DrawGroup)
+          : '13',
+        even: drawGroupsForBuilding('even').includes(saved.even as DrawGroup)
+          ? (saved.even as DrawGroup)
+          : '12',
+      }
+    } catch {
+      return { odd: '13', even: '12' }
+    }
+  })
   const config = BUILDING_CONFIGS[building]
   const [selectedId, setSelectedId] = useState('361')
   const [view, setView] = useState<BuildingView>('perspective')
@@ -111,6 +143,7 @@ function App() {
       snapshot.auditLog,
       snapshot.surroundings,
       snapshot.solarIllustrations,
+      snapshot.edgeLandmarks,
     )
     setDeclines(snapshot.declines ?? [])
   }
@@ -130,6 +163,13 @@ function App() {
     // A hidratação acontece uma vez ao restaurar a sessão.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
+
+  useEffect(() => {
+    window.localStorage.setItem(
+      'evo-coop-active-draw-groups',
+      JSON.stringify(activeDrawGroups),
+    )
+  }, [activeDrawGroups])
 
   // A tela cheia do navegador pode ser negada (ou nem existir no host); nesse
   // caso o modo apresentação segue valendo apenas escondendo o cabeçalho.
@@ -187,11 +227,52 @@ function App() {
   )
 
   const selectedApartment = config.apartmentById[selectedId]
+  const drawGroups = drawGroupsForBuilding(building)
+  const activeDrawGroup =
+    building === 'odd' || building === 'even'
+      ? activeDrawGroups[building]
+      : undefined
   const selectedStatus = statuses[selectedId] ?? 'none'
-  const selectedSolarIllustration = selectedApartment
-    ? solarIllustrations[building][selectedApartment.ending]
-    : undefined
+  const selectedSolarIllustrations = (() => {
+    if (!selectedApartment) return []
+    const raw = solarIllustrations[building][selectedApartment.ending]
+    if (Array.isArray(raw)) return raw
+    return raw ? [raw] : []
+  })()
+  const selectedEdgeLandmarks = selectedApartment
+    ? (edgeLandmarks[building][selectedApartment.ending] ?? [])
+    : []
+  const buildingEdgeLandmarks = edgeLandmarksForBuilding(
+    edgeLandmarks,
+    building,
+  )
   const showFloorPlan = Boolean(config.floorModel && selectedApartment)
+  const solarCards =
+    selectedApartment && selectedSolarIllustrations.length > 0 ? (
+      <div className="canvas-solar-stack">
+        {selectedSolarIllustrations.map((illustration) => {
+          const option = SOLAR_ILLUSTRATION_BY_ID[illustration]
+          return (
+            <figure
+              className="solar-illustration-card canvas-solar-card"
+              key={illustration}
+            >
+              <img
+                src={option.image}
+                alt={`${option.label} no final ${selectedApartment.ending}`}
+              />
+              <figcaption>
+                <SurroundingIcon icon={option.icon} size={13} />
+                <span>
+                  <b>{option.label}</b>
+                  <small>Final {selectedApartment.ending}</small>
+                </span>
+              </figcaption>
+            </figure>
+          )
+        })}
+      </div>
+    ) : null
   const isGroundPlan =
     Boolean(config.groundFloorModel) && floorPlanKind === 'ground'
   const floorPlanFloor = isGroundPlan
@@ -242,7 +323,16 @@ function App() {
     setSelectedId(id)
     const storageId = apartmentStorageId(building, id)
     const existing = assignments[storageId]
-    setDrawBall(existing?.ball ?? '')
+    const parsed = existing
+      ? parseAssociateCode(building, existing.ball)
+      : null
+    if (parsed && (building === 'odd' || building === 'even')) {
+      setActiveDrawGroups((current) => ({
+        ...current,
+        [building]: parsed.group,
+      }))
+    }
+    setDrawBall(parsed?.ball ?? existing?.ball ?? '')
     setParticipant(existing?.participant ?? '')
     setJustification('')
     setModalError('')
@@ -254,9 +344,15 @@ function App() {
     if (!pendingId || !currentUser) return
     const storageId = apartmentStorageId(building, pendingId)
     const existingReservation = pendingExisting
-    const ball = drawBall.trim()
+    const ball = activeDrawGroup
+      ? buildAssociateCode(activeDrawGroup, drawBall)
+      : drawBall.trim()
     if (!ball) {
-      setModalError('Informe o número da bolinha sorteada.')
+      setModalError(
+        activeDrawGroup
+          ? 'Informe uma bolinha entre 1 e 9999.'
+          : 'Informe o código do associado.',
+      )
       return
     }
     if (existingReservation && !justification.trim()) {
@@ -349,6 +445,7 @@ function App() {
         assignments: reportAssignments,
         auditLog,
         surroundings,
+        edgeLandmarks,
         declines,
       })
       showNotice('Relatório PDF gerado')
@@ -480,6 +577,28 @@ function App() {
                 </button>
               ))}
             </div>
+            {activeDrawGroup && (
+              <label className="draw-group-selector">
+                <span>Grupo do sorteio</span>
+                <select
+                  value={activeDrawGroup}
+                  onChange={(event) => {
+                    const group = event.target.value as DrawGroup
+                    setActiveDrawGroups((current) => ({
+                      ...current,
+                      [building as 'odd' | 'even']: group,
+                    }))
+                    setDrawBall('')
+                  }}
+                >
+                  {drawGroups.map((group) => (
+                    <option value={group} key={group}>
+                      G{group}
+                    </option>
+                  ))}
+                </select>
+              </label>
+            )}
             <div className="viewer-assists">
               <button
                 type="button"
@@ -529,7 +648,14 @@ function App() {
               />
               {showEnvironment && !showFloorPlan ? (
                 <EnvironmentOverlay
-                  showLabels={config.hasEnvironmentLabels}
+                  showLabels={
+                    config.hasEnvironmentLabels ||
+                    buildingEdgeLandmarks.length > 0
+                  }
+                  landmarks={buildingEdgeLandmarks}
+                  activeLandmarks={
+                    selectedApartment ? selectedEdgeLandmarks : undefined
+                  }
                 />
               ) : (
                 <div className="orientation-badge">
@@ -604,28 +730,20 @@ function App() {
                 {showEnvironment && (
                   <EnvironmentOverlay
                     variant="plan"
-                    showLabels={config.hasEnvironmentLabels}
+                    showLabels={
+                      config.hasEnvironmentLabels ||
+                      buildingEdgeLandmarks.length > 0
+                    }
+                    landmarks={buildingEdgeLandmarks}
+                    activeLandmarks={
+                      selectedApartment ? selectedEdgeLandmarks : undefined
+                    }
                   />
                 )}
+                {solarCards}
               </div>
             )}
-            {selectedApartment && selectedSolarIllustration && (
-              <figure className="solar-illustration-card canvas-solar-card">
-                <img
-                  src={SOLAR_ILLUSTRATION_BY_ID[selectedSolarIllustration].image}
-                  alt={`${SOLAR_ILLUSTRATION_BY_ID[selectedSolarIllustration].label} no final ${selectedApartment.ending}`}
-                />
-                <figcaption>
-                  <SurroundingIcon icon={selectedSolarIllustration} size={13} />
-                  <span>
-                    <b>
-                      {SOLAR_ILLUSTRATION_BY_ID[selectedSolarIllustration].label}
-                    </b>
-                    <small>Final {selectedApartment.ending}</small>
-                  </span>
-                </figcaption>
-              </figure>
-            )}
+            {!showFloorPlan && solarCards}
           </div>
         </section>
 
@@ -678,13 +796,19 @@ function App() {
           </section>
 
           <DeclinedDrawsPanel
+            building={building}
+            activeGroup={activeDrawGroup}
             items={buildingDeclines}
             busy={declineBusy}
             error={declineError}
             onAdd={async (input) => {
               setDeclineError('')
               if (!input.ball) {
-                setDeclineError('Informe a bolinha sorteada.')
+                setDeclineError(
+                  activeDrawGroup
+                    ? 'Informe uma bolinha entre 1 e 9999.'
+                    : 'Informe o código do associado.',
+                )
                 return false
               }
               setDeclineBusy(true)
@@ -694,7 +818,9 @@ function App() {
                   ...input,
                 })
                 setDeclines((current) => [created, ...current])
-                showNotice(`Bolinha ${created.ball} incluída na Lista de Abdicação`)
+                showNotice(
+                  `Associado ${created.ball} incluído na Lista de Abdicação`,
+                )
                 return true
               } catch (error) {
                 setDeclineError(
@@ -766,7 +892,7 @@ function App() {
                 <Ticket size={15} />
                 <div>
                   <span>
-                    Bolinha{' '}
+                    Código associado{' '}
                     <b>
                       {
                         assignments[apartmentStorageId(building, selectedId)]
@@ -803,6 +929,15 @@ function App() {
               <div className="unit-indications">
                 <span className="eyebrow">Características desta posição</span>
                 <div className="unit-indication-tags">
+                  {selectedEdgeLandmarks.map((id) => {
+                    const option = EDGE_LANDMARK_BY_ID[id]
+                    return (
+                      <span className="is-edge" key={id}>
+                        <SurroundingIcon icon={option.icon} size={14} />
+                        {option.label}
+                      </span>
+                    )
+                  })}
                   {(surroundings[building][selectedApartment.ending] ?? []).map(
                     (item) => (
                       <span key={item.id}>
@@ -973,19 +1108,39 @@ function App() {
             </div>
 
             <label className="modal-field">
-              <span>Bolinha sorteada *</span>
-              <input
-                autoFocus
-                value={drawBall}
-                onChange={(event) => {
-                  setDrawBall(event.target.value)
-                  setModalError('')
-                }}
-                placeholder="Ex.: 127"
-                onKeyDown={(event) => {
-                  if (event.key === 'Enter') confirmApartment()
-                }}
-              />
+              <span>
+                {activeDrawGroup ? 'Bolinha sorteada *' : 'Código associado *'}
+              </span>
+              <div className={activeDrawGroup ? 'associate-code-input' : undefined}>
+                {activeDrawGroup && <b>{activeDrawGroup}</b>}
+                <input
+                  autoFocus
+                  value={drawBall}
+                  inputMode={activeDrawGroup ? 'numeric' : undefined}
+                  maxLength={activeDrawGroup ? 4 : undefined}
+                  onChange={(event) => {
+                    setDrawBall(
+                      activeDrawGroup
+                        ? event.target.value.replace(/\D/g, '').slice(0, 4)
+                        : event.target.value,
+                    )
+                    setModalError('')
+                  }}
+                  placeholder={activeDrawGroup ? '0001' : 'Ex.: 110396'}
+                  onKeyDown={(event) => {
+                    if (event.key === 'Enter') confirmApartment()
+                  }}
+                />
+              </div>
+              {activeDrawGroup && (
+                <small className="associate-code-preview">
+                  Código associado:{' '}
+                  <b>
+                    {buildAssociateCode(activeDrawGroup, drawBall) ??
+                      `${activeDrawGroup}----`}
+                  </b>
+                </small>
+              )}
             </label>
 
             <label className="modal-field">
@@ -1097,15 +1252,45 @@ function App() {
         <AdminPanel
           surroundings={surroundings}
           solarIllustrations={solarIllustrations}
+          edgeLandmarks={edgeLandmarks}
           onUpdate={async (kind, ending, items) => {
             setSurroundings(kind, ending, items)
             await api.updateSurroundings(kind, ending, items)
             await refreshMap()
           }}
-          onSaveSolar={async (kind, ending, illustration) => {
-            await api.updateSolarIllustration(kind, ending, illustration)
-            setSolarIllustration(kind, ending, illustration)
+          onSaveSolar={async (kind, ending, illustrations) => {
+            await api.updateSolarIllustrations(kind, ending, illustrations)
+            setSolarIllustrations(kind, ending, illustrations)
             await refreshMap()
+          }}
+          onSaveEdge={async (kind, ending, landmarks) => {
+            await api.updateEdgeLandmarks(kind, ending, landmarks)
+            setEdgeLandmarks(kind, ending, landmarks)
+            await refreshMap()
+          }}
+          mapBuilding={building}
+          activeGroup={activeDrawGroup}
+          assignments={assignments}
+          declines={declines}
+          onArchived={async (kind, group) => {
+            await refreshMap()
+            const next =
+              group && (kind === 'odd' || kind === 'even')
+                ? nextDrawGroup(kind, group)
+                : undefined
+            if (next && (kind === 'odd' || kind === 'even')) {
+              setActiveDrawGroups((current) => ({
+                ...current,
+                [kind]: next,
+              }))
+            }
+            showNotice(
+              group
+                ? next
+                  ? `Grupo G${group} arquivado. Mapa limpo. Próximo grupo: G${next}.`
+                  : `Grupo G${group} arquivado. Mapa limpo para o próximo empreendimento.`
+                : 'Sorteio arquivado. Mapa limpo para o próximo empreendimento.',
+            )
           }}
           onClose={() => setAdminOpen(false)}
         />

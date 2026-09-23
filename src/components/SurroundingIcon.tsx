@@ -1,5 +1,8 @@
 import {
+  BedSingle,
+  Boxes,
   Building2,
+  DoorOpen,
   Map,
   Route,
   Sunrise,
@@ -20,7 +23,10 @@ const ICONS: Record<IconName, ComponentType<LucideProps>> = {
   sunset: Sunset,
   park: Map,
   road: Route,
+  gate: DoorOpen,
   water: Waves,
+  storage: Boxes,
+  'service-room': BedSingle,
 }
 
 export function SurroundingIcon({

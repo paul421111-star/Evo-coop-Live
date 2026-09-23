@@ -27,6 +27,33 @@ function FloorModel({ url }: { url: string }) {
   return <primitive object={model} />
 }
 
+function PlanCore({
+  config,
+  overlayY,
+}: {
+  config: BuildingConfig
+  overlayY: number
+}) {
+  const core = config.planCore
+  if (!core) return null
+
+  return (
+    <group position={[core.x ?? 0, overlayY, core.z ?? 0]}>
+      <mesh renderOrder={11}>
+        <boxGeometry args={[core.width, 0.14, core.depth]} />
+        <meshBasicMaterial
+          color="#8fa9c4"
+          transparent
+          opacity={0.2}
+          depthWrite={false}
+          toneMapped={false}
+        />
+        <Edges color="#8fb6d6" linewidth={2} />
+      </mesh>
+    </group>
+  )
+}
+
 function FloorUnits({
   config,
   floor,
@@ -134,6 +161,10 @@ export function FloorPlanScene(props: Props) {
       <Suspense fallback={null}>
         <FloorModel url={modelUrl} />
       </Suspense>
+      <PlanCore
+        config={props.config}
+        overlayY={props.overlayY ?? props.config.floorPlanY ?? 3.02}
+      />
       <FloorUnits {...props} />
       <OrbitControls
         makeDefault

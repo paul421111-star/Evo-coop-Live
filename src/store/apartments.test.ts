@@ -122,18 +122,30 @@ describe('estado dos apartamentos', () => {
     })
   })
 
-  it('configura e remove a ilustração solar de cada final', () => {
+  it('configura e remove as ilustrações de cada final', () => {
     const store = useApartmentStore.getState()
-    store.setSolarIllustration('jardim-artes', 2, 'sunset')
+    store.setSolarIllustrations('jardim-artes', 2, ['sunset', 'future-green'])
     expect(
       useApartmentStore.getState().solarIllustrations['jardim-artes'][2],
-    ).toBe('sunset')
+    ).toEqual(['sunset', 'future-green'])
 
-    useApartmentStore
-      .getState()
-      .setSolarIllustration('jardim-artes', 2, undefined)
+    useApartmentStore.getState().setSolarIllustrations('jardim-artes', 2, [])
     expect(
       useApartmentStore.getState().solarIllustrations['jardim-artes'][2],
+    ).toBeUndefined()
+  })
+
+  it('configura e remove as informações de borda de cada final', () => {
+    const store = useApartmentStore.getState()
+    store.setEdgeLandmarks('even', 1, ['br-116', 'sunset'])
+    expect(useApartmentStore.getState().edgeLandmarks.even[1]).toEqual([
+      'br-116',
+      'sunset',
+    ])
+
+    useApartmentStore.getState().setEdgeLandmarks('even', 1, [])
+    expect(
+      useApartmentStore.getState().edgeLandmarks.even[1],
     ).toBeUndefined()
   })
 })

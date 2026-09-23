@@ -1,53 +1,57 @@
-import { Building2, Sunrise, Sunset, TreePine, Trees } from 'lucide-react'
+import { SurroundingIcon } from './SurroundingIcon'
+import {
+  EDGE_LANDMARK_BY_ID,
+  type EdgeLandmark,
+} from '../config/surroundings'
 
 type Props = {
   variant?: 'tower' | 'plan'
   showLabels?: boolean
+  landmarks?: EdgeLandmark[]
+  activeLandmarks?: EdgeLandmark[]
 }
 
 export function EnvironmentOverlay({
   variant = 'tower',
   showLabels = true,
+  landmarks = [],
+  activeLandmarks,
 }: Props) {
+  const highlightAll = activeLandmarks === undefined
+
   return (
     <div
       className={`environment-overlay ${variant === 'plan' ? 'is-plan' : ''}`}
       aria-label="Orientação do entorno do empreendimento"
     >
-      {showLabels && (
-        <>
-          <div className="environment-point environment-north">
-            <TreePine size={16} />
-            <span>
-              <b>Futura área verde</b>
-              <small>Norte</small>
-            </span>
-          </div>
-          <div className="environment-point environment-east">
-            <Trees size={16} />
-            <span>
-              <b>Área de mata</b>
-              <small>Leste · Sol nasce</small>
-            </span>
-            <Sunrise className="solar-icon sunrise-icon" size={16} />
-          </div>
-          <div className="environment-point environment-south">
-            <Building2 size={16} />
-            <span>
-              <b>Bloco C</b>
-              <small>Sul</small>
-            </span>
-          </div>
-          <div className="environment-point environment-west">
-            <Building2 size={16} />
-            <span>
-              <b>Blocos G e F</b>
-              <small>Oeste · Pôr do sol</small>
-            </span>
-            <Sunset className="solar-icon sunset-icon" size={16} />
-          </div>
-        </>
-      )}
+      {showLabels &&
+        landmarks.map((id) => {
+          const option = EDGE_LANDMARK_BY_ID[id]
+          const active =
+            highlightAll || Boolean(activeLandmarks?.includes(id))
+          return (
+            <div
+              className={`environment-point environment-${option.side}${active ? ' is-active' : ' is-muted'}`}
+              key={id}
+            >
+              <SurroundingIcon
+                icon={option.icon}
+                size={16}
+                className={
+                  option.icon === 'sunrise'
+                    ? 'solar-icon sunrise-icon'
+                    : option.icon === 'sunset'
+                      ? 'solar-icon sunset-icon'
+                      : undefined
+                }
+              />
+              <span>
+                <b>{option.label}</b>
+                <small>{option.detail}</small>
+              </span>
+            </div>
+          )
+        })}
       <div className="site-compass" aria-hidden="true">
         <b className="direction-n">N</b>
         <b className="direction-l">L</b>
