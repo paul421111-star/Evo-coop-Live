@@ -39,6 +39,9 @@ export function ApartmentGrid({
       : [floorFilter]
 
   const endings = endingFilter === 'all' ? config.endings : [endingFilter]
+  const columns = `45px repeat(${endings.length}, minmax(${
+    endings.length > 4 ? 38 : 52
+  }px, 1fr))`
   const visibleCount = config.apartments.filter(
     ({ floor, ending, id }) =>
       (floorFilter === 'all' || floor === floorFilter) &&
@@ -55,9 +58,7 @@ export function ApartmentGrid({
       <div className="inventory-table" aria-label="Apartamentos por andar">
         <div
           className="grid-row grid-header"
-          style={{
-            gridTemplateColumns: `45px repeat(${endings.length}, minmax(52px, 1fr))`,
-          }}
+          style={{ gridTemplateColumns: columns }}
         >
           <span>Andar</span>
           {endings.map((ending) => (
@@ -71,9 +72,7 @@ export function ApartmentGrid({
           <div
             className="grid-row"
             key={floor}
-            style={{
-              gridTemplateColumns: `45px repeat(${endings.length}, minmax(52px, 1fr))`,
-            }}
+            style={{ gridTemplateColumns: columns }}
           >
             <span className="floor-number">
               {String(floor).padStart(2, '0')}º

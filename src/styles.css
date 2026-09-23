@@ -806,6 +806,8 @@ select:focus-visible {
   flex-direction: column;
   overflow-y: auto;
   background: var(--panel);
+  scrollbar-color: #bac7d0 transparent;
+  scrollbar-width: thin;
 }
 
 .panel-section {
@@ -1156,11 +1158,9 @@ select:focus-visible {
 }
 
 .inventory-table-wrap {
-  min-height: 300px;
   display: flex;
-  flex: 1;
   flex-direction: column;
-  padding: 14px 18px 0;
+  padding: 14px 18px 18px;
 }
 
 .inventory-caption {
@@ -1182,12 +1182,7 @@ select:focus-visible {
 }
 
 .inventory-table {
-  min-height: 0;
-  flex: 1;
-  overflow: auto;
-  padding-right: 4px;
-  scrollbar-color: #bac7d0 transparent;
-  scrollbar-width: thin;
+  min-width: 0;
 }
 
 .grid-row {
@@ -1906,10 +1901,6 @@ select:focus-visible {
   .control-panel {
     max-height: none;
     overflow: visible;
-  }
-
-  .inventory-table {
-    max-height: 520px;
   }
 
   .panel-footer {

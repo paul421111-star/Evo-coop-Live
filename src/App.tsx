@@ -86,6 +86,7 @@ function App() {
   const [statusFilter, setStatusFilter] = useState<ApartmentStatus | 'all'>('all')
   const [notice, setNotice] = useState('')
   const [pendingId, setPendingId] = useState<string | null>(null)
+  const [pendingExisting, setPendingExisting] = useState(false)
   const [drawBall, setDrawBall] = useState('')
   const [participant, setParticipant] = useState('')
   const [justification, setJustification] = useState('')
@@ -177,13 +178,14 @@ function App() {
     setParticipant(existing?.participant ?? '')
     setJustification('')
     setModalError('')
+    setPendingExisting(statuses[id] !== 'none')
     setPendingId(id)
   }
 
   const confirmApartment = async () => {
     if (!pendingId || !currentUser) return
     const storageId = apartmentStorageId(building, pendingId)
-    const existingReservation = statuses[pendingId] !== 'none'
+    const existingReservation = pendingExisting
     const ball = drawBall.trim()
     if (!ball) {
       setModalError('Informe o número da bolinha sorteada.')
@@ -217,15 +219,15 @@ function App() {
         ...input,
         reason: existingReservation ? justification.trim() : undefined,
       })
+      setPendingId(null)
       saveReservation(
         storageId,
         input,
         currentUser.username,
         existingReservation ? justification.trim() : undefined,
       )
-      await refreshMap()
-      setPendingId(null)
       showNotice(`Apartamento ${pendingId} reservado`)
+      await refreshMap()
     } catch (error) {
       setModalError(
         error instanceof Error ? error.message : 'Não foi possível salvar.',
@@ -780,9 +782,7 @@ function App() {
             <div className="modal-heading">
               <div>
                 <span className="eyebrow">
-                  {statuses[pendingId] !== 'none'
-                    ? 'Alterar reserva'
-                    : 'Confirmar escolha'}
+                  {pendingExisting ? 'Alterar reserva' : 'Confirmar escolha'}
                 </span>
                 <h2 id="assignment-title">Apartamento {pendingId}</h2>
               </div>
@@ -846,7 +846,7 @@ function App() {
               </span>
             </div>
 
-            {statuses[pendingId] !== 'none' && (
+            {pendingExisting && (
               <label className="modal-field justification-field">
                 <span>Justificativa da alteração *</span>
                 <textarea
@@ -864,7 +864,7 @@ function App() {
             {modalError && <p className="modal-error">{modalError}</p>}
 
             <div className="modal-actions">
-              {statuses[pendingId] !== 'none' && (
+              {pendingExisting && (
                 <button
                   type="button"
                   className="danger-button"
@@ -882,16 +882,16 @@ function App() {
                         justification.trim(),
                       )
                       .then(async () => {
+                        setPendingId(null)
                         removeReservation(
                           apartmentStorageId(building, pendingId),
                           currentUser.username,
                           justification.trim(),
                         )
-                        await refreshMap()
-                        setPendingId(null)
                         showNotice(
                           `Reserva do apartamento ${pendingId} removida`,
                         )
+                        await refreshMap()
                       })
                       .catch((error: unknown) =>
                         setModalError(
@@ -918,9 +918,7 @@ function App() {
                 onClick={confirmApartment}
               >
                 <Check size={16} />
-                {statuses[pendingId] !== 'none'
-                  ? 'Salvar alteração'
-                  : 'Confirmar reserva'}
+                {pendingExisting ? 'Salvar alteração' : 'Confirmar reserva'}
               </button>
             </div>
           </section>
