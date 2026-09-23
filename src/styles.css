@@ -91,18 +91,14 @@ select:focus-visible {
 }
 
 .brand {
-  gap: 12px;
+  min-width: 145px;
 }
 
-.brand-mark {
-  width: 39px;
-  height: 39px;
-  display: grid;
-  place-items: center;
-  color: white;
-  border-radius: 11px;
-  background: linear-gradient(145deg, #0d9189, #075d5a);
-  box-shadow: 0 8px 22px rgb(8 126 120 / 22%);
+.brand-logo {
+  width: 138px;
+  height: 54px;
+  display: block;
+  object-fit: contain;
 }
 
 .brand > div {
@@ -1625,6 +1621,26 @@ select:focus-visible {
   font-size: 7px;
 }
 
+/* A ilustração fica ancorada na área do modelo para continuar visível
+   enquanto o painel lateral é rolado. */
+.canvas-solar-card {
+  width: 172px;
+  position: absolute;
+  z-index: 4;
+  top: 62px;
+  right: 14px;
+  margin: 0;
+  border-color: rgb(125 165 187 / 28%);
+  background: rgb(5 17 29 / 88%);
+  backdrop-filter: blur(9px);
+  pointer-events: none;
+}
+
+.canvas-solar-card figcaption {
+  gap: 6px;
+  padding: 6px 8px;
+}
+
 .register-draw-button {
   display: flex;
   align-items: center;
@@ -1925,14 +1941,11 @@ select:focus-visible {
 }
 
 .login-brand {
-  width: 52px;
-  height: 52px;
-  display: grid;
-  place-items: center;
-  margin-bottom: 18px;
-  border-radius: 15px;
-  background: linear-gradient(145deg, #0d9189, #075d5a);
-  color: white;
+  width: min(260px, 82%);
+  height: auto;
+  display: block;
+  margin: 0 auto 22px;
+  object-fit: contain;
 }
 
 .login-card h1 {

@@ -1,5 +1,5 @@
 import { useState, type FormEvent } from 'react'
-import { Building2, Eye, EyeOff, LockKeyhole, UserRound } from 'lucide-react'
+import { Eye, EyeOff, LockKeyhole, UserRound } from 'lucide-react'
 import { authenticate, type AppUser } from '../auth/localAuth'
 
 type Props = {
@@ -34,10 +34,12 @@ export function LoginScreen({ onLogin }: Props) {
   return (
     <main className="login-screen">
       <section className="login-card">
-        <span className="login-brand">
-          <Building2 size={28} />
-        </span>
-        <span className="eyebrow">Evo Coop Live</span>
+        <img
+          className="login-brand"
+          src="/vida-nova-30-anos.png"
+          alt="Cooperativa Habitacional Vida Nova — 30 anos"
+        />
+        <span className="eyebrow">Mapa comercial interativo</span>
         <h1>Acesse o mapa do sorteio</h1>
         <p>Entre com sua conta para registrar e alterar reservas.</p>
 

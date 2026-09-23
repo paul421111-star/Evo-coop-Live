@@ -378,13 +378,11 @@ function App() {
     <div className={`app-shell ${presenting ? 'is-presenting' : ''}`}>
       <header className="topbar">
         <div className="brand">
-          <span className="brand-mark">
-            <Building2 size={20} strokeWidth={2.2} />
-          </span>
-          <div>
-            <strong>Evo Coop Live</strong>
-            <span>Mapa comercial interativo</span>
-          </div>
+          <img
+            className="brand-logo"
+            src="/vida-nova-30-anos.png"
+            alt="Cooperativa Habitacional Vida Nova — 30 anos"
+          />
         </div>
 
         <div className="building-switch" aria-label="Tipo de grupo">
@@ -611,6 +609,23 @@ function App() {
                 )}
               </div>
             )}
+            {selectedApartment && selectedSolarIllustration && (
+              <figure className="solar-illustration-card canvas-solar-card">
+                <img
+                  src={SOLAR_ILLUSTRATION_BY_ID[selectedSolarIllustration].image}
+                  alt={`${SOLAR_ILLUSTRATION_BY_ID[selectedSolarIllustration].label} no final ${selectedApartment.ending}`}
+                />
+                <figcaption>
+                  <SurroundingIcon icon={selectedSolarIllustration} size={13} />
+                  <span>
+                    <b>
+                      {SOLAR_ILLUSTRATION_BY_ID[selectedSolarIllustration].label}
+                    </b>
+                    <small>Final {selectedApartment.ending}</small>
+                  </span>
+                </figcaption>
+              </figure>
+            )}
           </div>
         </section>
 
@@ -797,34 +812,6 @@ function App() {
                     ),
                   )}
                 </div>
-                {selectedSolarIllustration && (
-                  <figure className="solar-illustration-card">
-                    <img
-                      src={
-                        SOLAR_ILLUSTRATION_BY_ID[selectedSolarIllustration].image
-                      }
-                      alt={`${SOLAR_ILLUSTRATION_BY_ID[selectedSolarIllustration].label} no final ${selectedApartment.ending}`}
-                    />
-                    <figcaption>
-                      <SurroundingIcon
-                        icon={selectedSolarIllustration}
-                        size={15}
-                      />
-                      <span>
-                        <b>
-                          {
-                            SOLAR_ILLUSTRATION_BY_ID[selectedSolarIllustration]
-                              .label
-                          }
-                        </b>
-                        <small>
-                          Ilustração da incidência solar · Final{' '}
-                          {selectedApartment.ending}
-                        </small>
-                      </span>
-                    </figcaption>
-                  </figure>
-                )}
               </div>
             )}
             <button
