@@ -14,6 +14,7 @@ type Props = {
   selectedId: string
   statuses: Record<string, ApartmentStatus>
   onSelect: (id: string) => void
+  onActivate: (id: string) => void
 }
 
 function FloorModel({ url }: { url: string }) {
@@ -22,7 +23,14 @@ function FloorModel({ url }: { url: string }) {
   return <primitive object={model} />
 }
 
-function FloorUnits({ config, floor, selectedId, statuses, onSelect }: Props) {
+function FloorUnits({
+  config,
+  floor,
+  selectedId,
+  statuses,
+  onSelect,
+  onActivate,
+}: Props) {
   const [hoveredId, setHoveredId] = useState('')
 
   return (
@@ -44,6 +52,10 @@ function FloorUnits({ config, floor, selectedId, statuses, onSelect }: Props) {
               onClick={(event) => {
                 event.stopPropagation()
                 onSelect(id)
+              }}
+              onDoubleClick={(event) => {
+                event.stopPropagation()
+                onActivate(id)
               }}
               onPointerOver={(event: ThreeEvent<PointerEvent>) => {
                 event.stopPropagation()
@@ -99,7 +111,7 @@ export function FloorPlanScene(props: Props) {
       camera={{
         position: [0, 60, 0],
         rotation: [-Math.PI / 2, 0, 0],
-        zoom: 14,
+        zoom: 11.5,
         near: 0.1,
         far: 150,
       }}

@@ -27,14 +27,10 @@ async function apiRequest<T>(url: string, options?: RequestInit): Promise<T> {
 }
 
 export async function authenticate(username: string, password: string) {
-  try {
-    return await apiRequest<AppUser>('/api/auth/login', {
-      method: 'POST',
-      body: JSON.stringify({ username, password }),
-    })
-  } catch {
-    return null
-  }
+  return apiRequest<AppUser>('/api/auth/login', {
+    method: 'POST',
+    body: JSON.stringify({ username, password }),
+  })
 }
 
 export async function getCurrentUser() {

@@ -31,7 +31,7 @@ describe('autenticação pela API', () => {
     )
   })
 
-  it('retorna nulo quando as credenciais são rejeitadas', async () => {
+  it('propaga o erro quando as credenciais são rejeitadas', async () => {
     vi.stubGlobal(
       'fetch',
       vi.fn().mockResolvedValue(
@@ -40,8 +40,9 @@ describe('autenticação pela API', () => {
         }),
       ),
     )
-    const admin = await authenticate('Paulo', 'incorreta')
-    expect(admin).toBeNull()
+    await expect(authenticate('Paulo', 'incorreta')).rejects.toThrow(
+      'Credenciais inválidas.',
+    )
   })
 
   it('cadastra um operador com conta individual', async () => {

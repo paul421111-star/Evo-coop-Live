@@ -19,6 +19,7 @@ type Props = {
   activeStatus: ApartmentStatus
   view: BuildingView
   onSelect: (id: string) => void
+  onActivate: (id: string) => void
 }
 
 function viewPositions(config: BuildingConfig) {
@@ -135,7 +136,11 @@ function ApartmentVolumes({
   statuses,
   selectedId,
   onSelect,
-}: Pick<Props, 'config' | 'statuses' | 'selectedId' | 'onSelect'>) {
+  onActivate,
+}: Pick<
+  Props,
+  'config' | 'statuses' | 'selectedId' | 'onSelect' | 'onActivate'
+>) {
   const [hoveredId, setHoveredId] = useState('')
 
   return (
@@ -162,6 +167,10 @@ function ApartmentVolumes({
             onClick={(event) => {
               event.stopPropagation()
               onSelect(apartment.id)
+            }}
+            onDoubleClick={(event) => {
+              event.stopPropagation()
+              onActivate(apartment.id)
             }}
             onPointerOver={(event: ThreeEvent<PointerEvent>) => {
               event.stopPropagation()
@@ -286,6 +295,7 @@ export function BuildingScene(props: Props) {
         statuses={props.statuses}
         selectedId={props.selectedId}
         onSelect={props.onSelect}
+        onActivate={props.onActivate}
       />
       {selectedApartment && (
         <mesh position={[0, selectedFloorY + 0.03, 0]} renderOrder={15}>

@@ -19,11 +19,7 @@ import {
   RotateCcw,
   Settings,
   ShieldCheck,
-  Sunrise,
-  Sunset,
   Ticket,
-  TreePine,
-  Trees,
   Upload,
   X,
 } from 'lucide-react'
@@ -32,6 +28,7 @@ import { api } from './api/client'
 import { AdminPanel } from './components/AdminPanel'
 import { ApartmentGrid } from './components/ApartmentGrid'
 import { BuildingScene, type BuildingView } from './components/BuildingScene'
+import { EnvironmentOverlay } from './components/EnvironmentOverlay'
 import { FloorPlanScene } from './components/FloorPlanScene'
 import { LoginScreen } from './components/LoginScreen'
 import { SurroundingIcon } from './components/SurroundingIcon'
@@ -147,6 +144,7 @@ function App() {
 
   const selectedApartment = config.apartmentById[selectedId]
   const selectedStatus = statuses[selectedId] ?? 'none'
+  const showFloorPlan = building === 'even' && Boolean(selectedApartment)
 
   const counts = useMemo(
     () =>
@@ -165,6 +163,10 @@ function App() {
   const showNotice = (message: string) => {
     setNotice(message)
     window.setTimeout(() => setNotice(''), 2600)
+  }
+
+  const selectApartment = (id: string) => {
+    setSelectedId(id)
   }
 
   const requestApartment = (id: string) => {
@@ -491,7 +493,7 @@ function App() {
             </div>
           </div>
 
-          <div className={`canvas-wrap ${building === 'even' ? 'split-canvas' : ''}`}>
+          <div className={`canvas-wrap ${showFloorPlan ? 'split-canvas' : ''}`}>
             <div className="tower-view">
               <BuildingScene
                 config={config}
@@ -499,51 +501,11 @@ function App() {
                 selectedId={selectedId}
                 activeStatus="reserved"
                 view={view}
-                onSelect={requestApartment}
+                onSelect={selectApartment}
+                onActivate={requestApartment}
               />
-              {showEnvironment ? (
-                <div
-                  className="environment-overlay"
-                  aria-label="Orientação do entorno do empreendimento"
-                >
-                  <div className="environment-point environment-north">
-                    <TreePine size={16} />
-                    <span>
-                      <b>Futura área verde</b>
-                      <small>Norte</small>
-                    </span>
-                  </div>
-                  <div className="environment-point environment-east">
-                    <Trees size={16} />
-                    <span>
-                      <b>Área de mata</b>
-                      <small>Leste · Sol nasce</small>
-                    </span>
-                    <Sunrise className="solar-icon sunrise-icon" size={16} />
-                  </div>
-                  <div className="environment-point environment-south">
-                    <Building2 size={16} />
-                    <span>
-                      <b>Bloco C</b>
-                      <small>Sul</small>
-                    </span>
-                  </div>
-                  <div className="environment-point environment-west">
-                    <Building2 size={16} />
-                    <span>
-                      <b>Blocos G e F</b>
-                      <small>Oeste · Pôr do sol</small>
-                    </span>
-                    <Sunset className="solar-icon sunset-icon" size={16} />
-                  </div>
-                  <div className="site-compass" aria-hidden="true">
-                    <b className="direction-n">N</b>
-                    <b className="direction-l">L</b>
-                    <b className="direction-s">S</b>
-                    <b className="direction-o">O</b>
-                    <i />
-                  </div>
-                </div>
+              {showEnvironment && !showFloorPlan ? (
+                <EnvironmentOverlay />
               ) : (
                 <div className="orientation-badge">
                   <span>N</span>
@@ -557,7 +519,7 @@ function App() {
                 <span>{config.apartments.length} unidades</span>
               </div>
             </div>
-            {building === 'even' && selectedApartment && (
+            {showFloorPlan && selectedApartment && (
               <div className="floor-plan-view">
                 <div className="floor-plan-heading">
                   <div>
@@ -571,8 +533,10 @@ function App() {
                   floor={selectedApartment.floor}
                   selectedId={selectedId}
                   statuses={statuses}
-                  onSelect={requestApartment}
+                  onSelect={selectApartment}
+                  onActivate={requestApartment}
                 />
+                {showEnvironment && <EnvironmentOverlay variant="plan" />}
               </div>
             )}
           </div>
@@ -593,7 +557,7 @@ function App() {
               </span>
               <div>
                 <b>Reservado</b>
-                <small>Clique em uma unidade para registrar o sorteio</small>
+                <small>Clique para selecionar e confirme para registrar</small>
               </div>
               <strong>{counts.reserved}</strong>
             </div>
@@ -680,6 +644,16 @@ function App() {
                 </div>
               </div>
             )}
+            <button
+              type="button"
+              className="register-draw-button"
+              onClick={() => requestApartment(selectedId)}
+            >
+              <Ticket size={16} />
+              {selectedStatus === 'none'
+                ? 'Registrar sorteio desta unidade'
+                : 'Alterar reserva desta unidade'}
+            </button>
           </section>
 
           <section className="panel-section filters-section">
@@ -782,7 +756,8 @@ function App() {
             floorFilter={floorFilter}
             endingFilter={endingFilter}
             statusFilter={statusFilter}
-            onSelect={requestApartment}
+            onSelect={selectApartment}
+            onActivate={requestApartment}
           />
 
         </aside>

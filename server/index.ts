@@ -25,7 +25,7 @@ type Building = 'odd' | 'even'
 
 const app = express()
 const sessionCookie = 'evo_session'
-const port = Number(process.env.PORT ?? 3001)
+const port = Number(process.env.PORT ?? 3015)
 
 app.use(helmet({ contentSecurityPolicy: false }))
 app.use(express.json({ limit: '2mb' }))
@@ -588,6 +588,6 @@ app.use((_request, response) => {
   response.sendFile(path.join(distDirectory, 'index.html'))
 })
 
-app.listen(port, '0.0.0.0', () => {
-  console.log(`Evo Coop Live disponível em http://localhost:${port}`)
+app.listen(port, '127.0.0.1', () => {
+  console.log(`Evo Coop Live disponível em http://127.0.0.1:${port}`)
 })

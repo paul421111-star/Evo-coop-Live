@@ -15,6 +15,7 @@ type Props = {
   endingFilter: Ending | 'all'
   statusFilter: ApartmentStatus | 'all'
   onSelect: (id: string) => void
+  onActivate: (id: string) => void
 }
 
 type StatusStyle = CSSProperties & { '--unit-color': string }
@@ -27,6 +28,7 @@ export function ApartmentGrid({
   endingFilter,
   statusFilter,
   onSelect,
+  onActivate,
 }: Props) {
   const floors =
     floorFilter === 'all'
@@ -90,10 +92,11 @@ export function ApartmentGrid({
                   }`}
                   style={{ '--unit-color': statusData.color } as StatusStyle}
                   onClick={() => onSelect(id)}
+                  onDoubleClick={() => onActivate(id)}
                   disabled={hidden}
                   aria-label={`Apartamento ${id}, ${statusData.label}`}
                   aria-pressed={selectedId === id}
-                  title={`Apto ${id} · ${statusData.label}`}
+                  title={`Apto ${id} · ${statusData.label} · duplo clique para registrar`}
                 >
                   <span className="unit-dot" />
                   <span>{id}</span>

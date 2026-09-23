@@ -17,13 +17,18 @@ export function LoginScreen({ onLogin }: Props) {
     event.preventDefault()
     setLoading(true)
     setError('')
-    const user = await authenticate(username, password)
-    setLoading(false)
-    if (!user) {
-      setError('Usuário ou senha inválidos.')
-      return
+    try {
+      const user = await authenticate(username, password)
+      onLogin(user)
+    } catch (loginError) {
+      setError(
+        loginError instanceof Error
+          ? loginError.message
+          : 'Usuário ou senha inválidos.',
+      )
+    } finally {
+      setLoading(false)
     }
-    onLogin(user)
   }
 
   return (

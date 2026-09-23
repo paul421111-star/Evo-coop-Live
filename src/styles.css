@@ -611,6 +611,59 @@ select:focus-visible {
   color: #fb7185;
 }
 
+.is-plan .environment-point {
+  max-width: 132px;
+  padding: 6px 8px;
+  background: rgb(5 17 29 / 88%);
+}
+
+.is-plan .environment-north {
+  top: 60px;
+  left: 50%;
+  transform: translateX(-50%);
+}
+
+.is-plan .environment-east {
+  right: 10px;
+}
+
+.is-plan .environment-west {
+  left: 10px;
+}
+
+.is-plan .environment-south {
+  bottom: 10px;
+}
+
+.is-plan .site-compass i {
+  transform: none;
+}
+
+.is-plan .direction-n {
+  top: 4px;
+  right: 50%;
+  transform: translateX(50%);
+}
+
+.is-plan .direction-l {
+  top: 50%;
+  right: 5px;
+  bottom: auto;
+  transform: translateY(-50%);
+}
+
+.is-plan .direction-s {
+  bottom: 4px;
+  left: 50%;
+  transform: translateX(-50%);
+}
+
+.is-plan .direction-o {
+  top: 50%;
+  left: 5px;
+  transform: translateY(-50%);
+}
+
 .site-compass {
   width: 52px;
   height: 52px;
@@ -998,6 +1051,28 @@ select:focus-visible {
   color: #315f5b;
   font-size: 8px;
   font-weight: 600;
+}
+
+.register-draw-button {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  width: 100%;
+  height: 38px;
+  margin-top: 14px;
+  border: 1px solid var(--teal-dark);
+  border-radius: 9px;
+  background: var(--teal);
+  color: #fff;
+  font-size: 11px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: filter 0.15s ease;
+}
+
+.register-draw-button:hover {
+  filter: brightness(1.07);
 }
 
 .bulk-actions {
