@@ -2,6 +2,7 @@ import type { CSSProperties } from 'react'
 import {
   STATUS_BY_ID,
   apartmentId,
+  buildingFloors,
   type ApartmentStatus,
   type BuildingConfig,
   type Ending,
@@ -32,10 +33,7 @@ export function ApartmentGrid({
 }: Props) {
   const floors =
     floorFilter === 'all'
-      ? Array.from(
-          { length: config.floorCount },
-          (_, index) => config.floorCount - index,
-        )
+      ? buildingFloors(config).reverse()
       : [floorFilter]
 
   const endings = endingFilter === 'all' ? config.endings : [endingFilter]
@@ -75,10 +73,21 @@ export function ApartmentGrid({
             style={{ gridTemplateColumns: columns }}
           >
             <span className="floor-number">
-              {String(floor).padStart(2, '0')}º
+              {floor === 0 ? 'T' : `${String(floor).padStart(2, '0')}º`}
             </span>
             {endings.map((ending) => {
               const id = apartmentId(floor, ending)
+              if (!config.apartmentById[id]) {
+                return (
+                  <span
+                    key={id}
+                    className="unit-cell is-unavailable"
+                    aria-label={`Final ${ending} inexistente no térreo`}
+                  >
+                    —
+                  </span>
+                )
+              }
               const status = statuses[id] ?? 'none'
               const hidden = statusFilter !== 'all' && status !== statusFilter
               const statusData = STATUS_BY_ID[status]

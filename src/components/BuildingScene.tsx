@@ -6,6 +6,7 @@ import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js'
 import type { OrbitControls as OrbitControlsImpl } from 'three-stdlib'
 import {
   STATUS_BY_ID,
+  apartmentFloorCenterY,
   type ApartmentStatus,
   type BuildingConfig,
 } from '../config/building'
@@ -23,8 +24,8 @@ type Props = {
 }
 
 function viewPositions(config: BuildingConfig) {
-  const centerY = config.kind === 'even' ? 52 : 62
-  const distance = config.kind === 'even' ? 170 : 215
+  const centerY = config.cameraCenterY
+  const distance = config.cameraDistance
   return {
     perspective: [distance * 0.68, centerY + 16, distance * 0.68],
     front: [0, centerY, distance],
@@ -43,15 +44,16 @@ function CameraController({
 }) {
   const { camera } = useThree()
   const controls = useRef<OrbitControlsImpl>(null)
-  const positions = viewPositions(config)
-  const centerY = config.kind === 'even' ? 52 : 62
+  const centerY = config.cameraCenterY
 
+  // Só reenquadra ao trocar de prédio ou de vista: manter `positions` fora das
+  // dependências preserva o zoom e o pan feitos pelo usuário entre renders.
   useEffect(() => {
-    camera.position.set(...positions[view])
+    camera.position.set(...viewPositions(config)[view])
     camera.lookAt(0, centerY, 0)
     controls.current?.target.set(0, centerY, 0)
     controls.current?.update()
-  }, [camera, centerY, positions, view])
+  }, [camera, centerY, config, view])
 
   return (
     <OrbitControls
@@ -90,7 +92,7 @@ function BuildingModel({ config }: { config: BuildingConfig }) {
         /(Fachadas|Vidros|Caixilhos|Peitoris|Varanda|\/Fachada\/|Compartilhadas)/.test(
           object.name,
         )
-      if (config.kind === 'even' && !isEvenExterior) return
+      if (config.optimizeExteriorOnly && !isEvenExterior) return
 
       const material = Array.isArray(object.material)
         ? object.material[0]
@@ -126,7 +128,7 @@ function BuildingModel({ config }: { config: BuildingConfig }) {
     })
     clone.add(optimizedApartments)
     return clone
-  }, [config.kind, scene])
+  }, [config.optimizeExteriorOnly, scene])
 
   return <primitive object={model} />
 }
@@ -158,9 +160,7 @@ function ApartmentVolumes({
             key={apartment.id}
             position={[
               position.x,
-              config.floorBaseY +
-                1.4 +
-                (apartment.floor - 1) * config.floorHeight,
+              apartmentFloorCenterY(config, apartment.floor),
               position.z,
             ]}
             renderOrder={isSelected ? 12 : 10}
@@ -221,10 +221,9 @@ function SelectedApartmentLabel({
       center
       position={[
         position.x,
-        config.floorBaseY +
-          config.floorHeight +
-          1.2 +
-          (apartment.floor - 1) * config.floorHeight,
+        apartmentFloorCenterY(config, apartment.floor) +
+          config.floorHeight / 2 +
+          1.2,
         position.z,
       ]}
       distanceFactor={90}
@@ -254,8 +253,8 @@ export function BuildingScene(props: Props) {
   const positions = viewPositions(props.config)
   const selectedApartment = props.config.apartmentById[props.selectedId]
   const selectedFloorY = selectedApartment
-    ? props.config.floorBaseY +
-      (selectedApartment.floor - 1) * props.config.floorHeight
+    ? apartmentFloorCenterY(props.config, selectedApartment.floor) -
+      props.config.floorHeight / 2
     : 0
 
   return (

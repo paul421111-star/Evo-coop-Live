@@ -28,6 +28,7 @@ import { api } from './api/client'
 import { AdminPanel } from './components/AdminPanel'
 import { ApartmentGrid } from './components/ApartmentGrid'
 import { BuildingScene, type BuildingView } from './components/BuildingScene'
+import { DeclinedDrawsPanel } from './components/DeclinedDrawsPanel'
 import { EnvironmentOverlay } from './components/EnvironmentOverlay'
 import { FloorPlanScene } from './components/FloorPlanScene'
 import { LoginScreen } from './components/LoginScreen'
@@ -38,11 +39,18 @@ import {
   STATUS_OPTIONS,
   apartmentId,
   apartmentStorageId,
+  buildingEndingsForFloor,
+  buildingFloors,
   type ApartmentStatus,
   type BuildingKind,
   type Ending,
 } from './config/building'
-import type { SurroundingsConfig } from './config/surroundings'
+import type { DrawDecline } from './config/drawDeclines'
+import {
+  SOLAR_ILLUSTRATION_BY_ID,
+  type SolarIllustrationsConfig,
+  type SurroundingsConfig,
+} from './config/surroundings'
 import {
   normalizeAssignments,
   normalizeStatuses,
@@ -67,11 +75,17 @@ function App() {
   const assignments = useApartmentStore((state) => state.assignments)
   const auditLog = useApartmentStore((state) => state.auditLog)
   const surroundings = useApartmentStore((state) => state.surroundings)
+  const solarIllustrations = useApartmentStore(
+    (state) => state.solarIllustrations,
+  )
   const saveReservation = useApartmentStore((state) => state.saveReservation)
   const removeReservation = useApartmentStore(
     (state) => state.removeReservation,
   )
   const setSurroundings = useApartmentStore((state) => state.setSurroundings)
+  const setSolarIllustration = useApartmentStore(
+    (state) => state.setSolarIllustration,
+  )
   const replaceData = useApartmentStore((state) => state.replaceData)
 
   const [authReady, setAuthReady] = useState(false)
@@ -81,6 +95,9 @@ function App() {
   const config = BUILDING_CONFIGS[building]
   const [selectedId, setSelectedId] = useState('361')
   const [view, setView] = useState<BuildingView>('perspective')
+  const [floorPlanKind, setFloorPlanKind] = useState<'typical' | 'ground'>(
+    'typical',
+  )
   const [floorFilter, setFloorFilter] = useState<number | 'all'>('all')
   const [endingFilter, setEndingFilter] = useState<Ending | 'all'>('all')
   const [statusFilter, setStatusFilter] = useState<ApartmentStatus | 'all'>('all')
@@ -92,6 +109,9 @@ function App() {
   const [justification, setJustification] = useState('')
   const [modalError, setModalError] = useState('')
   const [showEnvironment, setShowEnvironment] = useState(true)
+  const [declines, setDeclines] = useState<DrawDecline[]>([])
+  const [declineError, setDeclineError] = useState('')
+  const [declineBusy, setDeclineBusy] = useState(false)
   const importInput = useRef<HTMLInputElement>(null)
 
   const refreshMap = async () => {
@@ -101,7 +121,9 @@ function App() {
       snapshot.assignments,
       snapshot.auditLog,
       snapshot.surroundings,
+      snapshot.solarIllustrations,
     )
+    setDeclines(snapshot.declines ?? [])
   }
 
   useEffect(() => {
@@ -128,6 +150,7 @@ function App() {
     setEndingFilter('all')
     setStatusFilter('all')
     setView('perspective')
+    setFloorPlanKind('typical')
   }
 
   const statuses = useMemo(
@@ -145,7 +168,21 @@ function App() {
 
   const selectedApartment = config.apartmentById[selectedId]
   const selectedStatus = statuses[selectedId] ?? 'none'
-  const showFloorPlan = building === 'even' && Boolean(selectedApartment)
+  const selectedSolarIllustration = selectedApartment
+    ? solarIllustrations[building][selectedApartment.ending]
+    : undefined
+  const showFloorPlan = Boolean(config.floorModel && selectedApartment)
+  const isGroundPlan =
+    Boolean(config.groundFloorModel) && floorPlanKind === 'ground'
+  const floorPlanFloor = isGroundPlan
+    ? 0
+    : selectedApartment?.floor === 0
+      ? 1
+      : (selectedApartment?.floor ?? 1)
+  const floorPlanEndings = buildingEndingsForFloor(config, floorPlanFloor)
+  const floorPlanModel = isGroundPlan
+    ? config.groundFloorModel
+    : config.floorModel
 
   const counts = useMemo(
     () =>
@@ -168,6 +205,10 @@ function App() {
 
   const selectApartment = (id: string) => {
     setSelectedId(id)
+    const apartment = config.apartmentById[id]
+    if (config.groundFloorModel && apartment) {
+      setFloorPlanKind(apartment.floor === 0 ? 'ground' : 'typical')
+    }
   }
 
   const requestApartment = (id: string) => {
@@ -205,6 +246,18 @@ function App() {
     if (duplicate) {
       setModalError(
         `A bolinha ${ball} já está vinculada ao apartamento ${duplicate[0].split(':')[1]}.`,
+      )
+      return
+    }
+    if (
+      declines.some(
+        (item) =>
+          item.building === building &&
+          item.ball.trim().toLocaleLowerCase() === ball.toLocaleLowerCase(),
+      )
+    ) {
+      setModalError(
+        'Esta bolinha está na lista de quem não aceitou o sorteio. Remova o registro antes de reservar.',
       )
       return
     }
@@ -268,6 +321,8 @@ function App() {
         assignments,
         auditLog,
         surroundings,
+        solarIllustrations,
+        declines,
       },
       null,
       2,
@@ -290,6 +345,7 @@ function App() {
         assignments?: unknown
         auditLog?: unknown
         surroundings?: unknown
+        solarIllustrations?: unknown
       }
       const normalized = normalizeStatuses(parsed.statuses ?? parsed)
       const normalizedAssignments = normalizeAssignments(parsed.assignments)
@@ -308,6 +364,12 @@ function App() {
         !Array.isArray(parsed.surroundings)
           ? (parsed.surroundings as SurroundingsConfig)
           : surroundings
+      const importedSolarIllustrations =
+        parsed.solarIllustrations &&
+        typeof parsed.solarIllustrations === 'object' &&
+        !Array.isArray(parsed.solarIllustrations)
+          ? (parsed.solarIllustrations as SolarIllustrationsConfig)
+          : solarIllustrations
       await api.importMap({
         statuses: normalized as ApartmentStatuses,
         assignments: normalizedAssignments as ApartmentAssignments,
@@ -315,12 +377,14 @@ function App() {
           ? parsed.auditLog
           : []) as AuditEvent[],
         surroundings: importedSurroundings,
+        solarIllustrations: importedSolarIllustrations,
       })
       replaceData(
         normalized as ApartmentStatuses,
         normalizedAssignments as ApartmentAssignments,
         (Array.isArray(parsed.auditLog) ? parsed.auditLog : []) as AuditEvent[],
         importedSurroundings,
+        importedSolarIllustrations,
       )
       showNotice('Mapa importado com sucesso')
     } catch {
@@ -341,6 +405,7 @@ function App() {
         assignments: reportAssignments,
         auditLog,
         surroundings,
+        declines,
       })
       showNotice('Relatório PDF gerado')
     } catch {
@@ -507,7 +572,9 @@ function App() {
                 onActivate={requestApartment}
               />
               {showEnvironment && !showFloorPlan ? (
-                <EnvironmentOverlay />
+                <EnvironmentOverlay
+                  showLabels={config.hasEnvironmentLabels}
+                />
               ) : (
                 <div className="orientation-badge">
                   <span>N</span>
@@ -526,19 +593,64 @@ function App() {
                 <div className="floor-plan-heading">
                   <div>
                     <span>Planta ampliada</span>
-                    <strong>{selectedApartment.floor}º andar</strong>
+                    <strong>
+                      {floorPlanFloor === 0
+                        ? 'Térreo'
+                        : `${floorPlanFloor}º andar`}
+                    </strong>
                   </div>
                   <small>Clique em uma unidade</small>
                 </div>
+                {config.groundFloorModel && (
+                  <div className="floor-plan-tabs" aria-label="Tipo de planta">
+                    <button
+                      type="button"
+                      className={isGroundPlan ? 'active' : ''}
+                      onClick={() => {
+                        setFloorPlanKind('ground')
+                        const ending =
+                          selectedApartment.ending === 8
+                            ? 1
+                            : selectedApartment.ending
+                        setSelectedId(apartmentId(0, ending))
+                      }}
+                    >
+                      Térreo · 7 aptos
+                    </button>
+                    <button
+                      type="button"
+                      className={!isGroundPlan ? 'active' : ''}
+                      onClick={() => {
+                        setFloorPlanKind('typical')
+                        const floor =
+                          selectedApartment.floor === 0
+                            ? 1
+                            : selectedApartment.floor
+                        setSelectedId(
+                          apartmentId(floor, selectedApartment.ending),
+                        )
+                      }}
+                    >
+                      Pavimento · 8 aptos
+                    </button>
+                  </div>
+                )}
                 <FloorPlanScene
                   config={config}
-                  floor={selectedApartment.floor}
+                  floor={floorPlanFloor}
                   selectedId={selectedId}
                   statuses={statuses}
+                  modelUrl={floorPlanModel}
+                  endings={floorPlanEndings}
                   onSelect={selectApartment}
                   onActivate={requestApartment}
                 />
-                {showEnvironment && <EnvironmentOverlay variant="plan" />}
+                {showEnvironment && (
+                  <EnvironmentOverlay
+                    variant="plan"
+                    showLabels={config.hasEnvironmentLabels}
+                  />
+                )}
               </div>
             )}
           </div>
@@ -565,6 +677,57 @@ function App() {
             </div>
           </section>
 
+          <DeclinedDrawsPanel
+            items={declines.filter((item) => item.building === building)}
+            busy={declineBusy}
+            error={declineError}
+            onAdd={async (input) => {
+              setDeclineError('')
+              if (!input.ball) {
+                setDeclineError('Informe a bolinha sorteada.')
+                return false
+              }
+              setDeclineBusy(true)
+              try {
+                const created = await api.addDecline({
+                  building,
+                  ...input,
+                })
+                setDeclines((current) => [created, ...current])
+                showNotice(`Bolinha ${created.ball} registrada como não aceitou`)
+                return true
+              } catch (error) {
+                setDeclineError(
+                  error instanceof Error
+                    ? error.message
+                    : 'Não foi possível registrar.',
+                )
+                return false
+              } finally {
+                setDeclineBusy(false)
+              }
+            }}
+            onRemove={async (id) => {
+              setDeclineError('')
+              setDeclineBusy(true)
+              try {
+                await api.removeDecline(id)
+                setDeclines((current) =>
+                  current.filter((item) => item.id !== id),
+                )
+                showNotice('Registro removido')
+              } catch (error) {
+                setDeclineError(
+                  error instanceof Error
+                    ? error.message
+                    : 'Não foi possível remover.',
+                )
+              } finally {
+                setDeclineBusy(false)
+              }
+            }}
+          />
+
           <section className="panel-section selection-card">
             <span className="eyebrow">Unidade selecionada</span>
             <div className="selection-title">
@@ -585,7 +748,12 @@ function App() {
             </div>
             <div className="selection-meta">
               <span>
-                <b>{selectedApartment?.floor}º</b> andar
+                <b>
+                  {selectedApartment?.floor === 0
+                    ? 'Térreo'
+                    : `${selectedApartment?.floor}º`}
+                </b>{' '}
+                {selectedApartment?.floor === 0 ? '' : 'andar'}
               </span>
               <span>
                 <b>Final {selectedApartment?.ending}</b>{' '}
@@ -634,7 +802,7 @@ function App() {
             {selectedApartment && (
               <div className="unit-indications">
                 <span className="eyebrow">Características desta posição</span>
-                <div>
+                <div className="unit-indication-tags">
                   {(surroundings[building][selectedApartment.ending] ?? []).map(
                     (item) => (
                       <span key={item.id}>
@@ -644,6 +812,34 @@ function App() {
                     ),
                   )}
                 </div>
+                {selectedSolarIllustration && (
+                  <figure className="solar-illustration-card">
+                    <img
+                      src={
+                        SOLAR_ILLUSTRATION_BY_ID[selectedSolarIllustration].image
+                      }
+                      alt={`${SOLAR_ILLUSTRATION_BY_ID[selectedSolarIllustration].label} no final ${selectedApartment.ending}`}
+                    />
+                    <figcaption>
+                      <SurroundingIcon
+                        icon={selectedSolarIllustration}
+                        size={15}
+                      />
+                      <span>
+                        <b>
+                          {
+                            SOLAR_ILLUSTRATION_BY_ID[selectedSolarIllustration]
+                              .label
+                          }
+                        </b>
+                        <small>
+                          Ilustração da incidência solar · Final{' '}
+                          {selectedApartment.ending}
+                        </small>
+                      </span>
+                    </figcaption>
+                  </figure>
+                )}
               </div>
             )}
             <button
@@ -692,14 +888,13 @@ function App() {
                     }
                   >
                     <option value="all">Todos</option>
-                    {Array.from(
-                      { length: config.floorCount },
-                      (_, index) => config.floorCount - index,
-                    ).map((floor) => (
+                    {buildingFloors(config)
+                      .reverse()
+                      .map((floor) => (
                       <option key={floor} value={floor}>
-                        {floor}º
+                        {floor === 0 ? 'Térreo' : `${floor}º`}
                       </option>
-                    ))}
+                      ))}
                   </select>
                   <ChevronDown size={14} />
                 </div>
@@ -928,9 +1123,15 @@ function App() {
       {adminOpen && currentUser.role === 'admin' && (
         <AdminPanel
           surroundings={surroundings}
+          solarIllustrations={solarIllustrations}
           onUpdate={async (kind, ending, items) => {
             setSurroundings(kind, ending, items)
             await api.updateSurroundings(kind, ending, items)
+            await refreshMap()
+          }}
+          onSaveSolar={async (kind, ending, illustration) => {
+            await api.updateSolarIllustration(kind, ending, illustration)
+            setSolarIllustration(kind, ending, illustration)
             await refreshMap()
           }}
           onClose={() => setAdminOpen(false)}

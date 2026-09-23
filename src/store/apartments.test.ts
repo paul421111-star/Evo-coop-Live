@@ -6,6 +6,7 @@ import {
   normalizeStatuses,
   useApartmentStore,
 } from './apartments'
+import { DEFAULT_SOLAR_ILLUSTRATIONS } from '../config/surroundings'
 
 describe('estado dos apartamentos', () => {
   beforeEach(() => {
@@ -14,6 +15,7 @@ describe('estado dos apartamentos', () => {
       statuses: { ...EMPTY_STATUSES },
       assignments: {},
       auditLog: [],
+      solarIllustrations: structuredClone(DEFAULT_SOLAR_ILLUSTRATIONS),
       history: [],
     })
   })
@@ -32,13 +34,13 @@ describe('estado dos apartamentos', () => {
     })
   })
 
-  it('normaliza dados parciais para os dois tipos de prédio', () => {
+  it('normaliza dados parciais para todos os prédios', () => {
     const restored = normalizeStatuses({
       'odd:11': 'sold',
       'even:288': 'available',
     })
     expect(restored).not.toBeNull()
-    expect(Object.keys(restored ?? {})).toHaveLength(368)
+    expect(Object.keys(restored ?? {})).toHaveLength(707)
     expect(restored?.['odd:11']).toBe('sold')
     expect(restored?.['even:288']).toBe('available')
     expect(restored?.['even:22']).toBe('none')
@@ -118,6 +120,21 @@ describe('estado dos apartamentos', () => {
       action: 'removed',
       reason: 'Solicitação do sorteado',
     })
+  })
+
+  it('configura e remove a ilustração solar de cada final', () => {
+    const store = useApartmentStore.getState()
+    store.setSolarIllustration('jardim-artes', 2, 'sunset')
+    expect(
+      useApartmentStore.getState().solarIllustrations['jardim-artes'][2],
+    ).toBe('sunset')
+
+    useApartmentStore
+      .getState()
+      .setSolarIllustration('jardim-artes', 2, undefined)
+    expect(
+      useApartmentStore.getState().solarIllustrations['jardim-artes'][2],
+    ).toBeUndefined()
   })
 })
 

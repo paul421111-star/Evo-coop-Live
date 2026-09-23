@@ -9,7 +9,10 @@ import {
   isApartmentStatus,
 } from '../config/building'
 import {
+  DEFAULT_SOLAR_ILLUSTRATIONS,
   DEFAULT_SURROUNDINGS,
+  type SolarIllustration,
+  type SolarIllustrationsConfig,
   type SurroundingItem,
   type SurroundingsConfig,
 } from '../config/surroundings'
@@ -48,6 +51,7 @@ type ApartmentStore = {
   assignments: ApartmentAssignments
   auditLog: AuditEvent[]
   surroundings: SurroundingsConfig
+  solarIllustrations: SolarIllustrationsConfig
   history: Snapshot[]
   setStatus: (ids: string[], status: ApartmentStatus) => void
   assignApartment: (
@@ -67,11 +71,17 @@ type ApartmentStore = {
     ending: Ending,
     items: SurroundingItem[],
   ) => void
+  setSolarIllustration: (
+    building: BuildingKind,
+    ending: Ending,
+    illustration?: SolarIllustration,
+  ) => void
   replaceData: (
     statuses: ApartmentStatuses,
     assignments?: ApartmentAssignments,
     auditLog?: AuditEvent[],
     surroundings?: SurroundingsConfig,
+    solarIllustrations?: SolarIllustrationsConfig,
   ) => void
   clearAll: () => void
   undo: () => void
@@ -155,6 +165,10 @@ function cloneDefaultSurroundings(): SurroundingsConfig {
   return structuredClone(DEFAULT_SURROUNDINGS)
 }
 
+function cloneDefaultSolarIllustrations(): SolarIllustrationsConfig {
+  return structuredClone(DEFAULT_SOLAR_ILLUSTRATIONS)
+}
+
 function snapshot(
   statuses: ApartmentStatuses,
   assignments: ApartmentAssignments,
@@ -169,6 +183,7 @@ export const useApartmentStore = create<ApartmentStore>()(
       assignments: {},
       auditLog: [],
       surroundings: cloneDefaultSurroundings(),
+      solarIllustrations: cloneDefaultSolarIllustrations(),
       history: [],
       setStatus: (ids, status) =>
         set((state) => {
@@ -304,12 +319,34 @@ export const useApartmentStore = create<ApartmentStore>()(
             },
           },
         })),
-      replaceData: (statuses, assignments = {}, auditLog = [], surroundings) =>
+      setSolarIllustration: (building, ending, illustration) =>
+        set((state) => {
+          const buildingIllustrations = {
+            ...state.solarIllustrations[building],
+          }
+          if (illustration) buildingIllustrations[ending] = illustration
+          else delete buildingIllustrations[ending]
+          return {
+            solarIllustrations: {
+              ...state.solarIllustrations,
+              [building]: buildingIllustrations,
+            },
+          }
+        }),
+      replaceData: (
+        statuses,
+        assignments = {},
+        auditLog = [],
+        surroundings,
+        solarIllustrations,
+      ) =>
         set((state) => ({
           statuses: { ...statuses },
           assignments: { ...assignments },
           auditLog: [...auditLog],
           surroundings: surroundings ?? state.surroundings,
+          solarIllustrations:
+            solarIllustrations ?? state.solarIllustrations,
           history: [
             ...state.history.slice(-19),
             snapshot(state.statuses, state.assignments),
@@ -337,11 +374,18 @@ export const useApartmentStore = create<ApartmentStore>()(
     }),
     {
       name: 'firenzze-apartment-map-v2',
-      partialize: ({ statuses, assignments, auditLog, surroundings }) => ({
+      partialize: ({
         statuses,
         assignments,
         auditLog,
         surroundings,
+        solarIllustrations,
+      }) => ({
+        statuses,
+        assignments,
+        auditLog,
+        surroundings,
+        solarIllustrations,
       }),
       merge: (persisted, current) => {
         const saved = persisted as
@@ -350,6 +394,7 @@ export const useApartmentStore = create<ApartmentStore>()(
               assignments?: unknown
               auditLog?: unknown
               surroundings?: unknown
+              solarIllustrations?: unknown
             }
           | undefined
         const currentVersion = normalizeStatuses(saved?.statuses)
@@ -368,6 +413,12 @@ export const useApartmentStore = create<ApartmentStore>()(
               !Array.isArray(saved.surroundings)
                 ? (saved.surroundings as SurroundingsConfig)
                 : cloneDefaultSurroundings(),
+            solarIllustrations:
+              saved?.solarIllustrations &&
+              typeof saved.solarIllustrations === 'object' &&
+              !Array.isArray(saved.solarIllustrations)
+                ? (saved.solarIllustrations as SolarIllustrationsConfig)
+                : cloneDefaultSolarIllustrations(),
           }
         }
 

@@ -6,6 +6,10 @@ import {
 } from '../config/building'
 import type { ApartmentAssignments, AuditEvent } from '../store/apartments'
 import type { SurroundingsConfig } from '../config/surroundings'
+import {
+  DECLINE_REASON_BY_ID,
+  type DrawDecline,
+} from '../config/drawDeclines'
 
 type ReportInput = {
   config: BuildingConfig
@@ -13,6 +17,7 @@ type ReportInput = {
   assignments: ApartmentAssignments
   auditLog: AuditEvent[]
   surroundings: SurroundingsConfig
+  declines?: DrawDecline[]
 }
 
 export async function generateBuildingPdf({
@@ -21,6 +26,7 @@ export async function generateBuildingPdf({
   assignments,
   auditLog,
   surroundings,
+  declines = [],
 }: ReportInput) {
   const [{ jsPDF }, { default: autoTable }] = await Promise.all([
     import('jspdf'),
@@ -64,7 +70,7 @@ export async function generateBuildingPdf({
           assignments[apartmentStorageId(config.kind, apartment.id)]
         return [
           apartment.id,
-          `${apartment.floor}o`,
+          apartment.floor === 0 ? 'Terreo' : `${apartment.floor}o`,
           String(apartment.ending),
           STATUS_BY_ID[statuses[apartment.id] ?? 'none'].label,
           assignment?.ball ?? '-',
@@ -114,6 +120,29 @@ export async function generateBuildingPdf({
     })
   }
 
+  const buildingDeclines = declines.filter(
+    (item) => item.building === config.kind,
+  )
+  if (buildingDeclines.length) {
+    const tableDocument = document as typeof document & {
+      lastAutoTable?: { finalY: number }
+    }
+    autoTable(document, {
+      startY: (tableDocument.lastAutoTable?.finalY ?? 40) + 10,
+      head: [['Nao aceitaram', 'Sorteado', 'Motivo', 'Observacao', 'Incluido por']],
+      body: buildingDeclines.map((item) => [
+        item.ball,
+        item.participant || '-',
+        DECLINE_REASON_BY_ID[item.reason],
+        item.notes || '-',
+        item.createdBy,
+      ]),
+      styles: { fontSize: 7, cellPadding: 1.7 },
+      headStyles: { fillColor: [185, 111, 0] },
+      margin: { left: 14, right: 14 },
+    })
+  }
+
   const pages = document.getNumberOfPages()
   for (let page = 1; page <= pages; page += 1) {
     document.setPage(page)
@@ -127,7 +156,12 @@ export async function generateBuildingPdf({
     )
   }
 
-  const kind = config.kind === 'odd' ? 'grupos-impares' : 'grupos-pares'
+  const kind = config.label
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/(^-|-$)/g, '')
   document.save(
     `evo-coop-live-${kind}-${generatedAt.toISOString().slice(0, 10)}.pdf`,
   )

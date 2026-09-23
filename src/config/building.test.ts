@@ -14,14 +14,34 @@ describe('configuração do edifício', () => {
     expect(new Set(APARTMENTS.map(({ id }) => id))).toHaveLength(144)
     expect(APARTMENTS.at(0)?.id).toBe('11')
     expect(APARTMENTS.at(-1)?.id).toBe('364')
+    expect(BUILDING_CONFIGS.odd.floorModel).toContain('Pavimento_Tipo')
   })
 
-  it('gera 224 apartamentos para os grupos pares', () => {
+  it('gera 224 apartamentos para Firenze pares', () => {
     const even = BUILDING_CONFIGS.even
     expect(even.floorCount).toBe(28)
     expect(even.endings).toHaveLength(8)
     expect(even.apartments).toHaveLength(224)
     expect(even.apartments.at(-1)?.id).toBe('288')
+  })
+
+  it('gera 108 apartamentos para o Jardim das Artes', () => {
+    const jardim = BUILDING_CONFIGS['jardim-artes']
+    expect(jardim.floorCount).toBe(27)
+    expect(jardim.endings).toHaveLength(4)
+    expect(jardim.apartments).toHaveLength(108)
+    expect(jardim.apartments.at(-1)?.id).toBe('274')
+    expect(jardim.floorModel).toContain('Grupo_11_Pavimento')
+  })
+
+  it('gera térreo com 7 e 28 pavimentos com 8 no Cond. Iracema', () => {
+    const iracema = BUILDING_CONFIGS['cond-iracema']
+    expect(iracema.apartments).toHaveLength(231)
+    expect(iracema.apartmentById['01']).toBeDefined()
+    expect(iracema.apartmentById['07']).toBeDefined()
+    expect(iracema.apartmentById['08']).toBeUndefined()
+    expect(iracema.apartmentById['288']).toBeDefined()
+    expect(iracema.groundFloorModel).toContain('Terreo_7_Apartamentos')
   })
 
   it('forma identificadores de andar e final', () => {
@@ -35,6 +55,18 @@ describe('configuração do edifício', () => {
       ({ xSign, zSign }) => `${xSign}:${zSign}`,
     )
     expect(new Set(quadrants)).toHaveLength(4)
+  })
+
+  it('posiciona os finais ímpares em sentido horário na planta', () => {
+    const positions = BUILDING_CONFIGS.odd.unitPositions
+    expect(positions[1].x).toBeLessThan(0)
+    expect(positions[1].z).toBeLessThan(0)
+    expect(positions[2].x).toBeGreaterThan(0)
+    expect(positions[2].z).toBeLessThan(0)
+    expect(positions[3].x).toBeGreaterThan(0)
+    expect(positions[3].z).toBeGreaterThan(0)
+    expect(positions[4].x).toBeLessThan(0)
+    expect(positions[4].z).toBeGreaterThan(0)
   })
 })
 

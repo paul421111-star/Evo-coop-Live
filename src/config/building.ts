@@ -1,4 +1,4 @@
-export type BuildingKind = 'odd' | 'even'
+export type BuildingKind = 'odd' | 'even' | 'jardim-artes' | 'cond-iracema'
 export type Ending = 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8
 export type ApartmentStatus =
   | 'none'
@@ -28,13 +28,21 @@ export type BuildingConfig = {
   label: string
   description: string
   floorCount: number
+  minFloor?: number
   endings: Ending[]
+  endingsByFloor?: Partial<Record<number, Ending[]>>
   apartments: Apartment[]
   apartmentById: Record<string, Apartment>
   towerModel: string
   floorModel?: string
+  groundFloorModel?: string
   floorBaseY: number
   floorHeight: number
+  cameraCenterY: number
+  cameraDistance: number
+  floorPlanY?: number
+  optimizeExteriorOnly?: boolean
+  hasEnvironmentLabels?: boolean
   unitPositions: Record<number, UnitPosition>
 }
 
@@ -64,21 +72,33 @@ export function modelApartmentId(floor: number, ending: Ending): string {
   return `${String(floor).padStart(2, '0')}0${ending}`
 }
 
-function makeApartments(floorCount: number, endings: Ending[]): Apartment[] {
-  return Array.from({ length: floorCount }, (_, index) => index + 1).flatMap(
-    (floor) =>
-      endings.map((ending) => ({
+function makeApartments(
+  floorCount: number,
+  endings: Ending[],
+  minFloor = 1,
+  endingsByFloor: Partial<Record<number, Ending[]>> = {},
+): Apartment[] {
+  return Array.from(
+    { length: floorCount - minFloor + 1 },
+    (_, index) => index + minFloor,
+  ).flatMap((floor) =>
+      (endingsByFloor[floor] ?? endings).map((ending) => ({
         id: apartmentId(floor, ending),
         floor,
         ending,
       })),
-  )
+    )
 }
 
 function makeConfig(
   config: Omit<BuildingConfig, 'apartments' | 'apartmentById'>,
 ): BuildingConfig {
-  const apartments = makeApartments(config.floorCount, config.endings)
+  const apartments = makeApartments(
+    config.floorCount,
+    config.endings,
+    config.minFloor,
+    config.endingsByFloor,
+  )
   return {
     ...config,
     apartments,
@@ -106,17 +126,17 @@ const ODD_UNIT_POSITIONS: Record<number, UnitPosition> = {
     depth: 9.4,
   },
   3: {
-    label: 'Frente esquerda',
-    shortLabel: 'FE',
-    x: -8.45,
+    label: 'Frente direita',
+    shortLabel: 'FD',
+    x: 8.45,
     z: 4.71,
     width: 16.8,
     depth: 9.4,
   },
   4: {
-    label: 'Frente direita',
-    shortLabel: 'FD',
-    x: 8.45,
+    label: 'Frente esquerda',
+    shortLabel: 'FE',
+    x: -8.45,
     z: 4.71,
     width: 16.8,
     depth: 9.4,
@@ -134,21 +154,72 @@ const EVEN_UNIT_POSITIONS: Record<number, UnitPosition> = {
   8: { label: 'Fundos direita', shortLabel: 'TD', x: 3.78, z: -10.92, width: 7.8, depth: 14.7 },
 }
 
+const JARDIM_ARTES_UNIT_POSITIONS: Record<number, UnitPosition> = {
+  1: {
+    label: 'Fundos esquerda',
+    shortLabel: 'TE',
+    x: -8.31,
+    z: -5.05,
+    width: 16.77,
+    depth: 10.35,
+  },
+  2: {
+    label: 'Fundos direita',
+    shortLabel: 'TD',
+    x: 8.35,
+    z: -5.05,
+    width: 16.7,
+    depth: 10.35,
+  },
+  3: {
+    label: 'Frente direita',
+    shortLabel: 'FD',
+    x: 8.35,
+    z: 5.05,
+    width: 16.7,
+    depth: 10.35,
+  },
+  4: {
+    label: 'Frente esquerda',
+    shortLabel: 'FE',
+    x: -8.31,
+    z: 5.05,
+    width: 16.77,
+    depth: 10.35,
+  },
+}
+
+const IRACEMA_UNIT_POSITIONS: Record<number, UnitPosition> = {
+  1: { label: 'Leste fundos', shortLabel: 'LF', x: 8.05, z: -3.26, width: 9.94, depth: 6.65 },
+  2: { label: 'Leste frente', shortLabel: 'LE', x: 8.05, z: 3.27, width: 9.94, depth: 6.63 },
+  3: { label: 'Frente direita', shortLabel: 'FD', x: 3.26, z: 8.05, width: 6.65, depth: 9.94 },
+  4: { label: 'Frente esquerda', shortLabel: 'FE', x: -3.27, z: 8.05, width: 6.63, depth: 9.94 },
+  5: { label: 'Oeste frente', shortLabel: 'OF', x: -8.05, z: 3.26, width: 9.94, depth: 6.65 },
+  6: { label: 'Oeste fundos', shortLabel: 'OT', x: -8.05, z: -3.27, width: 9.94, depth: 6.63 },
+  7: { label: 'Fundos esquerda', shortLabel: 'TE', x: -3.26, z: -8.05, width: 6.65, depth: 9.94 },
+  8: { label: 'Fundos direita', shortLabel: 'TD', x: 3.27, z: -8.05, width: 6.63, depth: 9.94 },
+}
+
 export const BUILDING_CONFIGS: Record<BuildingKind, BuildingConfig> = {
   odd: makeConfig({
     kind: 'odd',
-    label: 'Grupos ímpares',
+    label: 'Firenze ímpares',
     description: '36 andares · 4 apartamentos',
     floorCount: 36,
     endings: [1, 2, 3, 4],
     towerModel: '/models/Firenze_Grupo15_Torre_Completa.glb',
+    floorModel: '/models/Firenze_Grupo15_Pavimento_Tipo.glb',
     floorBaseY: 9,
     floorHeight: 3,
+    cameraCenterY: 62,
+    cameraDistance: 215,
+    floorPlanY: 3.02,
+    hasEnvironmentLabels: true,
     unitPositions: ODD_UNIT_POSITIONS,
   }),
   even: makeConfig({
     kind: 'even',
-    label: 'Grupos pares',
+    label: 'Firenze pares',
     description: '28 andares · 8 apartamentos',
     floorCount: 28,
     endings: [1, 2, 3, 4, 5, 6, 7, 8],
@@ -156,8 +227,73 @@ export const BUILDING_CONFIGS: Record<BuildingKind, BuildingConfig> = {
     floorModel: '/models/Grupo_12_Pavimento_8_Apartamentos.glb',
     floorBaseY: 12.2,
     floorHeight: 2.9,
+    cameraCenterY: 52,
+    cameraDistance: 170,
+    floorPlanY: 3.02,
+    optimizeExteriorOnly: true,
+    hasEnvironmentLabels: true,
     unitPositions: EVEN_UNIT_POSITIONS,
   }),
+  'jardim-artes': makeConfig({
+    kind: 'jardim-artes',
+    label: 'Jardim das Artes',
+    description: '27 andares · 4 apartamentos',
+    floorCount: 27,
+    endings: [1, 2, 3, 4],
+    towerModel: '/models/Grupo_11_Torre_Detalhada.glb',
+    floorModel: '/models/Grupo_11_Pavimento_4_Apartamentos.glb',
+    floorBaseY: 12.1,
+    floorHeight: 2.9,
+    cameraCenterY: 48,
+    cameraDistance: 160,
+    floorPlanY: 16.25,
+    optimizeExteriorOnly: true,
+    hasEnvironmentLabels: false,
+    unitPositions: JARDIM_ARTES_UNIT_POSITIONS,
+  }),
+  'cond-iracema': makeConfig({
+    kind: 'cond-iracema',
+    label: 'Cond. Iracema',
+    description: 'Térreo + 28 andares · 231 apartamentos',
+    floorCount: 28,
+    minFloor: 0,
+    endings: [1, 2, 3, 4, 5, 6, 7, 8],
+    endingsByFloor: { 0: [1, 2, 3, 4, 5, 6, 7] },
+    towerModel: '/models/Grupo_19_Torre_Detalhada.glb',
+    floorModel: '/models/Grupo_19_Pavimento_8_Apartamentos.glb',
+    groundFloorModel: '/models/Grupo_19_Terreo_7_Apartamentos.glb',
+    floorBaseY: 0.1,
+    floorHeight: 2.9,
+    cameraCenterY: 45,
+    cameraDistance: 150,
+    floorPlanY: 4.05,
+    optimizeExteriorOnly: true,
+    hasEnvironmentLabels: false,
+    unitPositions: IRACEMA_UNIT_POSITIONS,
+  }),
+}
+
+export function buildingFloors(config: BuildingConfig): number[] {
+  const minFloor = config.minFloor ?? 1
+  return Array.from(
+    { length: config.floorCount - minFloor + 1 },
+    (_, index) => minFloor + index,
+  )
+}
+
+export function buildingEndingsForFloor(
+  config: BuildingConfig,
+  floor: number,
+): Ending[] {
+  return config.endingsByFloor?.[floor] ?? config.endings
+}
+
+export function apartmentFloorCenterY(
+  config: BuildingConfig,
+  floor: number,
+): number {
+  const minFloor = config.minFloor ?? 1
+  return config.floorBaseY + 1.4 + (floor - minFloor) * config.floorHeight
 }
 
 export const ALL_APARTMENTS = Object.values(BUILDING_CONFIGS).flatMap(

@@ -21,6 +21,50 @@ export type SurroundingsConfig = Record<
   Partial<Record<Ending, SurroundingItem[]>>
 >
 
+export type SolarIllustration = 'sunrise' | 'sunset'
+
+export type SolarIllustrationsConfig = Record<
+  BuildingKind,
+  Partial<Record<Ending, SolarIllustration>>
+>
+
+export const SOLAR_ILLUSTRATION_OPTIONS: Array<{
+  id: SolarIllustration
+  label: string
+  image: string
+}> = [
+  {
+    id: 'sunrise',
+    label: 'Sol nascente',
+    image: '/images/sol-nascente-realista.png',
+  },
+  {
+    id: 'sunset',
+    label: 'Sol poente',
+    image: '/images/sol-poente-realista.png',
+  },
+]
+
+export const SOLAR_ILLUSTRATION_BY_ID = Object.fromEntries(
+  SOLAR_ILLUSTRATION_OPTIONS.map((option) => [option.id, option]),
+) as Record<SolarIllustration, (typeof SOLAR_ILLUSTRATION_OPTIONS)[number]>
+
+export const DEFAULT_SOLAR_ILLUSTRATIONS: SolarIllustrationsConfig = {
+  odd: { 1: 'sunset', 2: 'sunset', 3: 'sunrise', 4: 'sunrise' },
+  even: {
+    1: 'sunrise',
+    2: 'sunrise',
+    3: 'sunrise',
+    4: 'sunset',
+    5: 'sunset',
+    6: 'sunset',
+    7: 'sunset',
+    8: 'sunrise',
+  },
+  'jardim-artes': {},
+  'cond-iracema': {},
+}
+
 const item = (
   building: BuildingKind,
   ending: Ending,
@@ -98,6 +142,8 @@ export const DEFAULT_SURROUNDINGS: SurroundingsConfig = {
       item('even', 8, 3, 'Sol nascente', 'sunrise'),
     ],
   },
+  'jardim-artes': {},
+  'cond-iracema': {},
 }
 
 export const SURROUNDING_ICON_OPTIONS: Array<{

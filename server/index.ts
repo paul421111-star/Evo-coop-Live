@@ -21,7 +21,34 @@ type SessionUser = {
 }
 
 type AuthRequest = Request & { user?: SessionUser }
-type Building = 'odd' | 'even'
+type Building = 'odd' | 'even' | 'jardim-artes' | 'cond-iracema'
+
+const BUILDINGS: Building[] = [
+  'odd',
+  'even',
+  'jardim-artes',
+  'cond-iracema',
+]
+const SOLAR_ILLUSTRATIONS = ['sunrise', 'sunset'] as const
+const BUILDING_LIMITS: Record<
+  Building,
+  {
+    minFloor: number
+    floorCount: number
+    endingCount: number
+    groundEndingCount?: number
+  }
+> = {
+  odd: { minFloor: 1, floorCount: 36, endingCount: 4 },
+  even: { minFloor: 1, floorCount: 28, endingCount: 8 },
+  'jardim-artes': { minFloor: 1, floorCount: 27, endingCount: 4 },
+  'cond-iracema': {
+    minFloor: 0,
+    floorCount: 28,
+    endingCount: 8,
+    groundEndingCount: 7,
+  },
+}
 
 const app = express()
 const sessionCookie = 'evo_session'
@@ -92,9 +119,17 @@ function validApartment(building: Building, apartmentId: string) {
   if (!/^\d{2,3}$/.test(apartmentId)) return false
   const ending = Number(apartmentId.slice(-1))
   const floor = Number(apartmentId.slice(0, -1))
-  return building === 'odd'
-    ? floor >= 1 && floor <= 36 && ending >= 1 && ending <= 4
-    : floor >= 1 && floor <= 28 && ending >= 1 && ending <= 8
+  const limits = BUILDING_LIMITS[building]
+  const endingCount =
+    floor === 0
+      ? (limits.groundEndingCount ?? limits.endingCount)
+      : limits.endingCount
+  return (
+    floor >= limits.minFloor &&
+    floor <= limits.floorCount &&
+    ending >= 1 &&
+    ending <= endingCount
+  )
 }
 
 async function insertAudit(
@@ -250,8 +285,29 @@ app.delete(
   },
 )
 
+const DECLINE_REASONS = ['refused', 'next-tower', 'no-answer'] as const
+
+function declineData(row: Record<string, unknown>) {
+  return {
+    id: String(row.id),
+    building: String(row.building),
+    ball: String(row.ball ?? ''),
+    participant: String(row.participant ?? ''),
+    reason: String(row.reason),
+    notes: String(row.notes ?? ''),
+    createdBy: String(row.created_by_name ?? 'Registro anterior'),
+    createdAt: new Date(String(row.created_at)).toISOString(),
+  }
+}
+
 app.get('/api/map', async (_request, response) => {
-  const [reservationResult, auditResult, surroundingResult] = await Promise.all([
+  const [
+    reservationResult,
+    auditResult,
+    surroundingResult,
+    solarIllustrationResult,
+    declineResult,
+  ] = await Promise.all([
     pool.query(
       `SELECT r.*, creator.username AS created_by_name,
               updater.username AS updated_by_name
@@ -267,6 +323,16 @@ app.get('/api/map', async (_request, response) => {
     pool.query(
       `SELECT building, ending, item_id, label, icon
          FROM apartment_surroundings ORDER BY building, ending, sort_order`,
+    ),
+    pool.query(
+      `SELECT building, ending, illustration
+         FROM apartment_solar_illustrations ORDER BY building, ending`,
+    ),
+    pool.query(
+      `SELECT d.*, creator.username AS created_by_name
+         FROM draw_declines d
+         LEFT JOIN app_users creator ON creator.id = d.created_by
+        ORDER BY d.created_at DESC`,
     ),
   ])
 
@@ -289,6 +355,8 @@ app.get('/api/map', async (_request, response) => {
   const surroundings: Record<string, Record<string, unknown[]>> = {
     odd: {},
     even: {},
+    'jardim-artes': {},
+    'cond-iracema': {},
   }
   for (const row of surroundingResult.rows) {
     const ending = String(row.ending)
@@ -299,7 +367,23 @@ app.get('/api/map', async (_request, response) => {
       icon: row.icon,
     })
   }
-  response.json({ statuses, assignments, auditLog, surroundings })
+  const solarIllustrations: Record<string, Record<string, string>> = {
+    odd: {},
+    even: {},
+    'jardim-artes': {},
+    'cond-iracema': {},
+  }
+  for (const row of solarIllustrationResult.rows) {
+    solarIllustrations[row.building][String(row.ending)] = row.illustration
+  }
+  response.json({
+    statuses,
+    assignments,
+    auditLog,
+    surroundings,
+    solarIllustrations,
+    declines: declineResult.rows.map(declineData),
+  })
 })
 
 app.put(
@@ -310,7 +394,7 @@ app.put(
     const apartmentId = String(request.params.apartmentId)
     if (
       !actor ||
-      !['odd', 'even'].includes(building) ||
+      !BUILDINGS.includes(building) ||
       !validApartment(building, apartmentId)
     ) {
       response.status(400).json({ error: 'Apartamento inválido.' })
@@ -321,6 +405,18 @@ app.put(
     const reason = String(request.body?.reason ?? '').trim()
     if (!ball) {
       response.status(400).json({ error: 'Informe a bolinha sorteada.' })
+      return
+    }
+    const declinedBall = await pool.query(
+      `SELECT id FROM draw_declines
+        WHERE building = $1 AND lower(ball) = lower($2)`,
+      [building, ball],
+    )
+    if (declinedBall.rows[0]) {
+      response.status(409).json({
+        error:
+          'Esta bolinha está na lista de quem não aceitou o sorteio. Remova o registro antes de reservar.',
+      })
       return
     }
     const storageId = `${building}:${apartmentId}`
@@ -400,7 +496,11 @@ app.delete(
   async (request: AuthRequest, response) => {
     if (!request.user) return
     const building = request.params.building as Building
-    const apartmentId = request.params.apartmentId
+    const apartmentId = String(request.params.apartmentId)
+    if (!BUILDINGS.includes(building) || !validApartment(building, apartmentId)) {
+      response.status(400).json({ error: 'Apartamento inválido.' })
+      return
+    }
     const storageId = `${building}:${apartmentId}`
     const reason = String(request.body?.reason ?? '').trim()
     if (!reason) {
@@ -460,6 +560,14 @@ app.post(
             Record<string, Array<Record<string, unknown>>>
           >)
         : null
+    const solarIllustrations =
+      request.body?.solarIllustrations &&
+      typeof request.body.solarIllustrations === 'object'
+        ? (request.body.solarIllustrations as Record<
+            Building,
+            Record<string, unknown>
+          >)
+        : null
 
     await transaction(async (client) => {
       await client.query('DELETE FROM apartment_reservations')
@@ -472,7 +580,7 @@ app.post(
           string,
         ]
         if (
-          !['odd', 'even'].includes(building) ||
+          !BUILDINGS.includes(building) ||
           !validApartment(building, apartmentId)
         ) {
           continue
@@ -501,7 +609,7 @@ app.post(
 
       if (surroundings) {
         await client.query('DELETE FROM apartment_surroundings')
-        for (const building of ['odd', 'even'] as const) {
+        for (const building of BUILDINGS) {
           for (const [ending, items] of Object.entries(
             surroundings[building] ?? {},
           )) {
@@ -523,6 +631,29 @@ app.post(
           }
         }
       }
+
+      if (solarIllustrations) {
+        await client.query('DELETE FROM apartment_solar_illustrations')
+        for (const building of BUILDINGS) {
+          for (const [ending, illustration] of Object.entries(
+            solarIllustrations[building] ?? {},
+          )) {
+            if (
+              !SOLAR_ILLUSTRATIONS.includes(
+                illustration as (typeof SOLAR_ILLUSTRATIONS)[number],
+              )
+            ) {
+              continue
+            }
+            await client.query(
+              `INSERT INTO apartment_solar_illustrations
+                (building, ending, illustration)
+               VALUES ($1, $2, $3)`,
+              [building, Number(ending), illustration],
+            )
+          }
+        }
+      }
     })
     response.json({ ok: true })
   },
@@ -535,7 +666,13 @@ app.put(
     const building = request.params.building as Building
     const ending = Number(request.params.ending)
     const items = Array.isArray(request.body?.items) ? request.body.items : []
-    if (!['odd', 'even'].includes(building) || ending < 1 || ending > 8) {
+    const endingLimit = BUILDING_LIMITS[building]?.endingCount
+    if (
+      !BUILDINGS.includes(building) ||
+      !endingLimit ||
+      ending < 1 ||
+      ending > endingLimit
+    ) {
       response.status(400).json({ error: 'Final inválido.' })
       return
     }
@@ -561,6 +698,119 @@ app.put(
       }
     })
     response.json({ items })
+  },
+)
+
+app.put(
+  '/api/solar-illustrations/:building/:ending',
+  requireAdmin,
+  async (request: AuthRequest, response) => {
+    const building = request.params.building as Building
+    const ending = Number(request.params.ending)
+    const illustration = request.body?.illustration
+    const endingLimit = BUILDING_LIMITS[building]?.endingCount
+    if (
+      !BUILDINGS.includes(building) ||
+      !endingLimit ||
+      ending < 1 ||
+      ending > endingLimit ||
+      (illustration !== null &&
+        !SOLAR_ILLUSTRATIONS.includes(
+          illustration as (typeof SOLAR_ILLUSTRATIONS)[number],
+        ))
+    ) {
+      response.status(400).json({ error: 'Ilustração solar inválida.' })
+      return
+    }
+    if (illustration === null) {
+      await pool.query(
+        'DELETE FROM apartment_solar_illustrations WHERE building = $1 AND ending = $2',
+        [building, ending],
+      )
+    } else {
+      await pool.query(
+        `INSERT INTO apartment_solar_illustrations
+          (building, ending, illustration)
+         VALUES ($1, $2, $3)
+         ON CONFLICT (building, ending)
+         DO UPDATE SET illustration = EXCLUDED.illustration`,
+        [building, ending, illustration],
+      )
+    }
+    response.json({ illustration })
+  },
+)
+
+app.post(
+  '/api/declines',
+  async (request: AuthRequest, response) => {
+    const actor = request.user
+    const building = request.body?.building as Building
+    const ball = String(request.body?.ball ?? '').trim()
+    const participant = String(request.body?.participant ?? '').trim()
+    const reason = String(request.body?.reason ?? '')
+    const notes = String(request.body?.notes ?? '').trim().slice(0, 240)
+    if (!actor || !BUILDINGS.includes(building) || !ball) {
+      response.status(400).json({ error: 'Informe a bolinha sorteada.' })
+      return
+    }
+    if (!DECLINE_REASONS.includes(reason as (typeof DECLINE_REASONS)[number])) {
+      response.status(400).json({ error: 'Selecione o motivo.' })
+      return
+    }
+    const reserved = await pool.query(
+      `SELECT apartment_id FROM apartment_reservations
+        WHERE building = $1 AND lower(ball) = lower($2)`,
+      [building, ball],
+    )
+    if (reserved.rows[0]) {
+      response.status(409).json({
+        error: `Esta bolinha já está reservada no apartamento ${reserved.rows[0].apartment_id}.`,
+      })
+      return
+    }
+    try {
+      const { rows } = await pool.query(
+        `INSERT INTO draw_declines
+          (id, building, ball, participant, reason, notes, created_by)
+         VALUES ($1, $2, $3, $4, $5, $6, $7)
+         RETURNING *, $8::text AS created_by_name`,
+        [
+          randomUUID(),
+          building,
+          ball,
+          participant,
+          reason,
+          notes,
+          actor.id,
+          actor.username,
+        ],
+      )
+      response.status(201).json(declineData(rows[0]))
+    } catch (error) {
+      if ((error as { code?: string }).code === '23505') {
+        response.status(409).json({
+          error: 'Esta bolinha já está na lista de quem não aceitou.',
+        })
+        return
+      }
+      throw error
+    }
+  },
+)
+
+app.delete(
+  '/api/declines/:id',
+  async (request: AuthRequest, response) => {
+    const { rowCount } = await pool.query(
+      'DELETE FROM draw_declines WHERE id = $1',
+      [request.params.id],
+    )
+    if (!rowCount) {
+      response.status(404).json({ error: 'Registro não encontrado.' })
+      return
+    }
+    response.status(204).end()
   },
 )
 

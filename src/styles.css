@@ -453,6 +453,38 @@ select:focus-visible {
   font-size: 8px;
 }
 
+.floor-plan-tabs {
+  display: flex;
+  position: absolute;
+  z-index: 4;
+  top: 69px;
+  left: 50%;
+  gap: 4px;
+  padding: 4px;
+  border: 1px solid rgb(125 165 187 / 22%);
+  border-radius: 9px;
+  background: rgb(5 17 29 / 82%);
+  transform: translateX(-50%);
+  backdrop-filter: blur(9px);
+}
+
+.floor-plan-tabs button {
+  padding: 6px 9px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: #86a1b0;
+  font-size: 8px;
+  font-weight: 700;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.floor-plan-tabs button.active {
+  background: #0f766e;
+  color: #fff;
+}
+
 .floor-unit-label {
   min-width: 44px;
   padding: 4px 6px;
@@ -827,6 +859,121 @@ select:focus-visible {
   letter-spacing: -0.02em;
 }
 
+.declined-section {
+  background: #fffdf8;
+}
+
+.declined-hint {
+  margin: 8px 0 0;
+  color: #7c6d58;
+  font-size: 10px;
+  line-height: 1.4;
+}
+
+.declined-count {
+  min-width: 22px;
+  padding: 3px 7px;
+  border-radius: 999px;
+  background: #fff4de;
+  color: #9a6700;
+  font: 700 11px/1.2 'Manrope', sans-serif;
+  text-align: center;
+}
+
+.declined-form {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.declined-form label {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.declined-form span {
+  color: #778595;
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.declined-form input,
+.declined-form select {
+  height: 34px;
+  padding: 0 10px;
+  border: 1px solid #e4d7c2;
+  border-radius: 8px;
+  background: #fff;
+  color: #1d2a3a;
+}
+
+.declined-reason,
+.declined-notes {
+  grid-column: 1 / -1;
+}
+
+.declined-add-button {
+  grid-column: 1 / -1;
+  height: 36px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  border: 0;
+  border-radius: 9px;
+  background: #b66f00;
+  color: #fff;
+  font-size: 11px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.declined-add-button:disabled {
+  opacity: 0.6;
+  cursor: wait;
+}
+
+.declined-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin: 12px 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.declined-list li {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 9px 10px;
+  border: 1px solid #ead8b8;
+  border-radius: 9px;
+  background: #fff;
+}
+
+.declined-list li > div {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.declined-list b {
+  font-size: 11px;
+}
+
+.declined-list span,
+.declined-list small {
+  color: #7a6a54;
+  font-size: 10px;
+}
+
 .section-heading.compact h2 {
   display: flex;
   align-items: center;
@@ -1035,14 +1182,14 @@ select:focus-visible {
   border-top: 1px solid #e3e9ee;
 }
 
-.unit-indications > div {
+.unit-indication-tags {
   display: flex;
   flex-wrap: wrap;
   gap: 6px;
   margin-top: 7px;
 }
 
-.unit-indications > div > span {
+.unit-indication-tags > span {
   display: flex;
   align-items: center;
   gap: 5px;
@@ -1053,6 +1200,46 @@ select:focus-visible {
   color: #315f5b;
   font-size: 8px;
   font-weight: 600;
+}
+
+.solar-illustration-card {
+  overflow: hidden;
+  margin: 10px 0 0;
+  border: 1px solid #d8e2e8;
+  border-radius: 11px;
+  background: #071725;
+  box-shadow: 0 8px 20px rgb(28 56 73 / 12%);
+}
+
+.solar-illustration-card img {
+  display: block;
+  width: 100%;
+  aspect-ratio: 16 / 9;
+  object-fit: cover;
+}
+
+.solar-illustration-card figcaption {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 10px;
+  color: #dff8f5;
+}
+
+.solar-illustration-card figcaption > span,
+.solar-illustration-card figcaption b,
+.solar-illustration-card figcaption small {
+  display: block;
+}
+
+.solar-illustration-card figcaption b {
+  font-size: 9px;
+}
+
+.solar-illustration-card figcaption small {
+  margin-top: 1px;
+  color: #83a2af;
+  font-size: 7px;
 }
 
 .register-draw-button {
@@ -1250,6 +1437,13 @@ select:focus-visible {
 
 .unit-cell.is-filtered {
   opacity: 0.18;
+}
+
+.unit-cell.is-unavailable {
+  border-style: dashed;
+  background: #eef2f5;
+  color: #9aa6b2;
+  cursor: not-allowed;
 }
 
 .unit-dot {
@@ -1612,6 +1806,50 @@ select:focus-visible {
 
 .indication-edit-list header button {
   padding: 5px 7px;
+}
+
+.solar-config-row {
+  display: grid;
+  grid-template-columns: minmax(100px, 1fr) auto;
+  gap: 5px;
+  margin-bottom: 8px;
+  padding: 7px;
+  border: 1px solid #dce8e7;
+  border-radius: 8px;
+  background: #f4faf9;
+}
+
+.solar-config-row select,
+.solar-config-row button {
+  min-width: 0;
+  height: 30px;
+  border: 1px solid #bad9d6;
+  border-radius: 7px;
+  background: white;
+  color: #315f5b;
+  font-size: 8px;
+  font-weight: 600;
+}
+
+.solar-config-row button {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  padding: 0 8px;
+  background: #e7f7f4;
+  cursor: pointer;
+}
+
+.solar-config-row button:disabled {
+  cursor: wait;
+  opacity: 0.65;
+}
+
+.solar-config-row small {
+  grid-column: 1 / -1;
+  color: #b4233e;
+  font-size: 8px;
 }
 
 .indication-edit-row {

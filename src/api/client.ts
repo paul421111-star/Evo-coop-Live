@@ -1,9 +1,15 @@
 import type { AppUser } from '../auth/localAuth'
 import type { BuildingKind, Ending } from '../config/building'
 import type {
+  SolarIllustration,
+  SolarIllustrationsConfig,
   SurroundingItem,
   SurroundingsConfig,
 } from '../config/surroundings'
+import type {
+  DrawDecline,
+  DrawDeclineReason,
+} from '../config/drawDeclines'
 import type {
   ApartmentAssignments,
   ApartmentStatuses,
@@ -15,6 +21,8 @@ export type MapSnapshot = {
   assignments: ApartmentAssignments
   auditLog: AuditEvent[]
   surroundings: SurroundingsConfig
+  solarIllustrations: SolarIllustrationsConfig
+  declines?: DrawDecline[]
 }
 
 async function request<T>(url: string, options?: RequestInit): Promise<T> {
@@ -99,4 +107,31 @@ export const api = {
         body: JSON.stringify({ items }),
       },
     ),
+  updateSolarIllustration: (
+    building: BuildingKind,
+    ending: Ending,
+    illustration?: SolarIllustration,
+  ) =>
+    request<{ illustration: SolarIllustration | null }>(
+      `/api/solar-illustrations/${building}/${ending}`,
+      {
+        method: 'PUT',
+        body: JSON.stringify({ illustration: illustration ?? null }),
+      },
+    ),
+  addDecline: (input: {
+    building: BuildingKind
+    ball: string
+    participant: string
+    reason: DrawDeclineReason
+    notes?: string
+  }) =>
+    request<DrawDecline>('/api/declines', {
+      method: 'POST',
+      body: JSON.stringify(input),
+    }),
+  removeDecline: (id: string) =>
+    request<void>(`/api/declines/${encodeURIComponent(id)}`, {
+      method: 'DELETE',
+    }),
 }

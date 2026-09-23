@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { Plus, Trash2, UserPlus, Users, X } from 'lucide-react'
+import { Plus, Save, Trash2, UserPlus, Users, X } from 'lucide-react'
 import {
   createOperator,
   listUsers,
@@ -8,7 +8,10 @@ import {
 } from '../auth/localAuth'
 import { BUILDING_CONFIGS, type BuildingKind, type Ending } from '../config/building'
 import {
+  SOLAR_ILLUSTRATION_OPTIONS,
   SURROUNDING_ICON_OPTIONS,
+  type SolarIllustration,
+  type SolarIllustrationsConfig,
   type SurroundingIcon as IconName,
   type SurroundingItem,
   type SurroundingsConfig,
@@ -18,20 +21,38 @@ import { createLocalId } from '../utils/localCrypto'
 
 type Props = {
   surroundings: SurroundingsConfig
+  solarIllustrations: SolarIllustrationsConfig
   onUpdate: (
     building: BuildingKind,
     ending: Ending,
     items: SurroundingItem[],
   ) => void
+  onSaveSolar: (
+    building: BuildingKind,
+    ending: Ending,
+    illustration?: SolarIllustration,
+  ) => Promise<void>
   onClose: () => void
 }
 
-export function AdminPanel({ surroundings, onUpdate, onClose }: Props) {
+export function AdminPanel({
+  surroundings,
+  solarIllustrations,
+  onUpdate,
+  onSaveSolar,
+  onClose,
+}: Props) {
   const [users, setUsers] = useState<AppUser[]>([])
   const [username, setUsername] = useState('')
   const [password, setPassword] = useState('')
   const [userError, setUserError] = useState('')
   const [building, setBuilding] = useState<BuildingKind>('odd')
+  const [solarDrafts, setSolarDrafts] = useState<SolarIllustrationsConfig>(
+    () => structuredClone(solarIllustrations),
+  )
+  const [solarStatus, setSolarStatus] = useState<
+    Partial<Record<string, 'saving' | 'saved' | 'error'>>
+  >({})
 
   useEffect(() => {
     void listUsers().then(setUsers)
@@ -88,6 +109,32 @@ export function AdminPanel({ surroundings, onUpdate, onClose }: Props) {
         icon: 'tree',
       },
     ])
+  }
+
+  const updateSolarDraft = (
+    ending: Ending,
+    illustration?: SolarIllustration,
+  ) => {
+    const next = { ...solarDrafts[building] }
+    if (illustration) next[ending] = illustration
+    else delete next[ending]
+    setSolarDrafts((current) => ({ ...current, [building]: next }))
+    setSolarStatus((current) => {
+      const nextStatus = { ...current }
+      delete nextStatus[`${building}:${ending}`]
+      return nextStatus
+    })
+  }
+
+  const saveSolar = async (ending: Ending) => {
+    const key = `${building}:${ending}`
+    setSolarStatus((current) => ({ ...current, [key]: 'saving' }))
+    try {
+      await onSaveSolar(building, ending, solarDrafts[building][ending])
+      setSolarStatus((current) => ({ ...current, [key]: 'saved' }))
+    } catch {
+      setSolarStatus((current) => ({ ...current, [key]: 'error' }))
+    }
   }
 
   return (
@@ -193,6 +240,44 @@ export function AdminPanel({ surroundings, onUpdate, onClose }: Props) {
                     <Plus size={13} /> Adicionar
                   </button>
                 </header>
+                <div className="solar-config-row">
+                  <select
+                    value={solarDrafts[building][ending] ?? ''}
+                    onChange={(event) =>
+                      updateSolarDraft(
+                        ending,
+                        (event.target.value || undefined) as
+                          | SolarIllustration
+                          | undefined,
+                      )
+                    }
+                    aria-label={`Ilustração solar do final ${ending}`}
+                  >
+                    <option value="">Sem ilustração</option>
+                    {SOLAR_ILLUSTRATION_OPTIONS.map((option) => (
+                      <option value={option.id} key={option.id}>
+                        {option.label}
+                      </option>
+                    ))}
+                  </select>
+                  <button
+                    type="button"
+                    onClick={() => void saveSolar(ending)}
+                    disabled={
+                      solarStatus[`${building}:${ending}`] === 'saving'
+                    }
+                  >
+                    <Save size={13} />
+                    {solarStatus[`${building}:${ending}`] === 'saving'
+                      ? 'Salvando'
+                      : solarStatus[`${building}:${ending}`] === 'saved'
+                        ? 'Salvo'
+                        : 'Salvar ilustração'}
+                  </button>
+                  {solarStatus[`${building}:${ending}`] === 'error' && (
+                    <small>Não foi possível salvar.</small>
+                  )}
+                </div>
                 {(surroundings[building][ending] ?? []).map((item) => (
                   <div className="indication-edit-row" key={item.id}>
                     <SurroundingIcon icon={item.icon} size={16} />

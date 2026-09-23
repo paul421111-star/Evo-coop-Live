@@ -6,6 +6,7 @@ import {
   apartmentId,
   type ApartmentStatus,
   type BuildingConfig,
+  type Ending,
 } from '../config/building'
 
 type Props = {
@@ -13,6 +14,9 @@ type Props = {
   floor: number
   selectedId: string
   statuses: Record<string, ApartmentStatus>
+  modelUrl?: string
+  endings?: Ending[]
+  overlayY?: number
   onSelect: (id: string) => void
   onActivate: (id: string) => void
 }
@@ -28,14 +32,18 @@ function FloorUnits({
   floor,
   selectedId,
   statuses,
+  endings,
+  overlayY: configuredOverlayY,
   onSelect,
   onActivate,
 }: Props) {
   const [hoveredId, setHoveredId] = useState('')
+  const overlayY = configuredOverlayY ?? config.floorPlanY ?? 3.02
+  const visibleEndings = endings ?? config.endings
 
   return (
     <group>
-      {config.endings.map((ending) => {
+      {visibleEndings.map((ending) => {
         const id = apartmentId(floor, ending)
         const position = config.unitPositions[ending]
         const status = statuses[id] ?? 'none'
@@ -47,7 +55,7 @@ function FloorUnits({
         return (
           <group key={id}>
             <mesh
-              position={[position.x, 3.02, position.z]}
+              position={[position.x, overlayY, position.z]}
               renderOrder={12}
               onClick={(event) => {
                 event.stopPropagation()
@@ -84,7 +92,7 @@ function FloorUnits({
             </mesh>
             <Html
               center
-              position={[position.x, 3.45, position.z]}
+              position={[position.x, overlayY + 0.43, position.z]}
               style={{ pointerEvents: 'none' }}
             >
               <div
@@ -103,7 +111,8 @@ function FloorUnits({
 }
 
 export function FloorPlanScene(props: Props) {
-  if (!props.config.floorModel) return null
+  const modelUrl = props.modelUrl ?? props.config.floorModel
+  if (!modelUrl) return null
 
   return (
     <Canvas
@@ -123,7 +132,7 @@ export function FloorPlanScene(props: Props) {
       <hemisphereLight args={['#ffffff', '#26394a', 1.4]} />
       <directionalLight position={[20, 40, 18]} intensity={1.8} />
       <Suspense fallback={null}>
-        <FloorModel url={props.config.floorModel} />
+        <FloorModel url={modelUrl} />
       </Suspense>
       <FloorUnits {...props} />
       <OrbitControls
