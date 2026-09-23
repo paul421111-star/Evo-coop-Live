@@ -8,6 +8,7 @@ import type { ApartmentAssignments, AuditEvent } from '../store/apartments'
 import type { SurroundingsConfig } from '../config/surroundings'
 import {
   DECLINE_REASON_BY_ID,
+  DECLINE_SOURCE_BY_ID,
   type DrawDecline,
 } from '../config/drawDeclines'
 
@@ -129,10 +130,20 @@ export async function generateBuildingPdf({
     }
     autoTable(document, {
       startY: (tableDocument.lastAutoTable?.finalY ?? 40) + 10,
-      head: [['Nao aceitaram', 'Sorteado', 'Motivo', 'Observacao', 'Incluido por']],
+      head: [
+        [
+          'Lista de Abdicacao',
+          'Participante',
+          'Origem',
+          'Motivo',
+          'Observacao',
+          'Incluido por',
+        ],
+      ],
       body: buildingDeclines.map((item) => [
         item.ball,
         item.participant || '-',
+        DECLINE_SOURCE_BY_ID[item.source],
         DECLINE_REASON_BY_ID[item.reason],
         item.notes || '-',
         item.createdBy,

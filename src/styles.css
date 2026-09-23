@@ -62,9 +62,9 @@ select:focus-visible {
 .topbar {
   height: 72px;
   display: grid;
-  grid-template-columns: minmax(210px, 1fr) auto auto minmax(160px, 1fr);
+  grid-template-columns: auto minmax(0, 1fr) auto auto;
   align-items: center;
-  gap: 24px;
+  gap: 18px;
   padding: 0 28px;
   border-bottom: 1px solid #cfd8e1;
   background: rgb(248 250 252 / 88%);
@@ -125,6 +125,9 @@ select:focus-visible {
 
 .header-summary {
   gap: 14px;
+  justify-content: flex-end;
+  flex-shrink: 0;
+  white-space: nowrap;
 }
 
 .header-summary > div:first-child {
@@ -152,6 +155,7 @@ select:focus-visible {
   --progress: 0deg;
   width: 43px;
   height: 43px;
+  flex: 0 0 43px;
   display: grid;
   place-items: center;
   border-radius: 50%;
@@ -214,16 +218,24 @@ select:focus-visible {
 }
 
 .building-switch {
+  min-width: 0;
   display: flex;
   gap: 4px;
   padding: 4px;
   border: 1px solid #d6dee6;
   border-radius: 11px;
   background: #eaf0f4;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+
+.building-switch::-webkit-scrollbar {
+  display: none;
 }
 
 .building-switch button {
-  min-width: 132px;
+  min-width: 0;
+  flex: 1 1 auto;
   display: grid;
   grid-template-columns: auto 1fr;
   column-gap: 7px;
@@ -239,6 +251,13 @@ select:focus-visible {
 .building-switch button svg {
   grid-row: 1 / 3;
   align-self: center;
+}
+
+.building-switch button span,
+.building-switch button small {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .building-switch button span {
@@ -357,6 +376,46 @@ select:focus-visible {
   display: flex;
   align-items: center;
   gap: 10px;
+}
+
+.presentation-exit {
+  height: 31px;
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding: 0 10px;
+  border: 1px solid #2f5f5c;
+  border-radius: 7px;
+  background: #0d2a2a;
+  color: #7fd8cf;
+  font-size: 10px;
+  font-weight: 700;
+  white-space: nowrap;
+  cursor: pointer;
+  transition: 140ms ease;
+}
+
+.presentation-exit:hover {
+  border-color: #47908a;
+  background: #113635;
+  color: #a5efe6;
+}
+
+.presentation-exit kbd {
+  padding: 2px 5px;
+  border: 1px solid #2f5f5c;
+  border-radius: 4px;
+  background: #07191a;
+  color: #6fbdb5;
+  font: 700 8px/1 'Manrope', sans-serif;
+}
+
+.app-shell.is-presenting .topbar {
+  display: none;
+}
+
+.app-shell.is-presenting .workspace {
+  height: 100vh;
 }
 
 .environment-toggle {
@@ -974,6 +1033,330 @@ select:focus-visible {
   font-size: 10px;
 }
 
+.draw-overview-section {
+  background:
+    radial-gradient(circle at 100% 0, rgb(15 118 110 / 10%), transparent 42%),
+    #fff;
+}
+
+.draw-overview-heading {
+  align-items: flex-start;
+}
+
+.draw-metrics-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 7px;
+  margin-top: 13px;
+}
+
+.draw-metrics-grid article {
+  min-width: 0;
+  padding: 10px 9px;
+  border: 1px solid #dde5eb;
+  border-top: 3px solid #78909f;
+  border-radius: 9px;
+  background: rgb(255 255 255 / 88%);
+}
+
+.draw-metrics-grid article.is-chosen {
+  border-top-color: #0f8f83;
+}
+
+.draw-metrics-grid article.is-free {
+  border-top-color: #3ea76b;
+}
+
+.draw-metrics-grid article.is-abdication {
+  border-top-color: #d97706;
+}
+
+.draw-metrics-grid strong,
+.draw-metrics-grid span {
+  display: block;
+}
+
+.draw-metrics-grid strong {
+  color: #172738;
+  font: 700 18px/1 'Manrope', sans-serif;
+}
+
+.draw-metrics-grid span {
+  overflow: hidden;
+  margin-top: 5px;
+  color: #71808e;
+  font-size: 8px;
+  font-weight: 700;
+  text-overflow: ellipsis;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+.draw-progress {
+  margin-top: 12px;
+}
+
+.draw-progress > span {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.draw-progress b {
+  color: #24544f;
+  font-size: 9px;
+}
+
+.draw-progress small {
+  color: #84919c;
+  font-size: 8px;
+}
+
+.draw-progress > div {
+  overflow: hidden;
+  height: 6px;
+  margin-top: 6px;
+  border-radius: 99px;
+  background: #e6edf1;
+}
+
+.draw-progress i {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: linear-gradient(90deg, #0f766e, #22a699);
+}
+
+.abdication-section {
+  background: #fffcf7;
+}
+
+.abdication-heading {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 9px;
+}
+
+.abdication-icon {
+  width: 34px;
+  height: 34px;
+  display: grid;
+  place-items: center;
+  border-radius: 10px;
+  background: #fff0d7;
+  color: #b66300;
+}
+
+.abdication-heading h2 {
+  margin: 0;
+  font: 700 14px 'Manrope', sans-serif;
+}
+
+.abdication-heading p {
+  margin: 2px 0 0;
+  color: #7d7468;
+  font-size: 8px;
+}
+
+.abdication-count {
+  padding: 5px 8px;
+  border-radius: 99px;
+  background: #fff0d7;
+  color: #9a5a08;
+  font-size: 8px;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.abdication-form {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 7px;
+  margin-top: 13px;
+  padding: 10px;
+  border: 1px solid #eadcc6;
+  border-radius: 10px;
+  background: #fff;
+}
+
+.abdication-form label {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.abdication-form label > span {
+  color: #7d8791;
+  font-size: 7px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.abdication-form input,
+.abdication-form select {
+  min-width: 0;
+  height: 34px;
+  padding: 0 9px;
+  border: 1px solid #d9e0e5;
+  border-radius: 7px;
+  background: #fff;
+  color: #22313f;
+  font-size: 9px;
+}
+
+.abdication-notes,
+.abdication-add-button {
+  grid-column: 1 / -1;
+}
+
+.abdication-add-button {
+  height: 35px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  border: 0;
+  border-radius: 8px;
+  background: linear-gradient(135deg, #b96a08, #d98718);
+  color: #fff;
+  font-size: 10px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.abdication-add-button:disabled {
+  cursor: wait;
+  opacity: 0.6;
+}
+
+.abdication-list-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-top: 13px;
+}
+
+.abdication-list-toolbar > b {
+  color: #4b5865;
+  font-size: 9px;
+  text-transform: uppercase;
+}
+
+.abdication-list-toolbar label {
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  padding: 0 8px;
+  border: 1px solid #e1d7c8;
+  border-radius: 7px;
+  background: #fff;
+  color: #8a7c69;
+}
+
+.abdication-list-toolbar input {
+  width: 120px;
+  height: 29px;
+  padding: 0;
+  border: 0;
+  outline: none;
+  font-size: 8px;
+}
+
+.abdication-list {
+  max-height: 235px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  overflow-y: auto;
+  margin: 8px 0 0;
+  padding: 0 3px 0 0;
+  list-style: none;
+}
+
+.abdication-list li {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: flex-start;
+  gap: 9px;
+  padding: 9px;
+  border: 1px solid #e8ded0;
+  border-radius: 9px;
+  background: #fff;
+}
+
+.abdication-ball {
+  padding: 5px 7px;
+  border-radius: 7px;
+  background: #edf7ef;
+  color: #328147;
+  font: 700 10px 'Manrope', sans-serif;
+}
+
+.abdication-details {
+  min-width: 0;
+}
+
+.abdication-details > div {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+}
+
+.abdication-details b {
+  overflow: hidden;
+  color: #263746;
+  font-size: 9px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.abdication-details small,
+.abdication-details p {
+  display: block;
+  margin: 3px 0 0;
+  color: #7d8892;
+  font-size: 8px;
+}
+
+.abdication-reason {
+  flex: 0 0 auto;
+  padding: 3px 6px;
+  border-radius: 99px;
+  background: #fff0dc;
+  color: #a45e09;
+  font-size: 7px;
+  font-weight: 700;
+}
+
+.abdication-reason.is-no-answer {
+  background: #eef1f4;
+  color: #687684;
+}
+
+.abdication-list .icon-button {
+  width: 25px;
+  height: 25px;
+  border-color: #f0d8d8;
+  color: #ba3f52;
+}
+
+.abdication-empty {
+  margin-top: 8px;
+  padding: 15px;
+  border: 1px dashed #dfd4c4;
+  border-radius: 9px;
+  color: #8b7e6c;
+  font-size: 9px;
+  text-align: center;
+}
+
 .section-heading.compact h2 {
   display: flex;
   align-items: center;
@@ -1409,12 +1792,13 @@ select:focus-visible {
 
 .unit-cell {
   min-width: 0;
-  height: 31px;
+  min-height: 36px;
   display: flex;
+  flex-direction: column;
   align-items: center;
   justify-content: center;
-  gap: 6px;
-  padding: 0 4px;
+  gap: 1px;
+  padding: 4px;
   border: 1px solid #dce3e9;
   border-radius: 7px;
   background: #fff;
@@ -1423,6 +1807,28 @@ select:focus-visible {
   font-weight: 600;
   cursor: pointer;
   transition: 120ms ease;
+}
+
+.unit-cell-main {
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+}
+
+.unit-cell-main b {
+  font-size: 9px;
+}
+
+.unit-cell > small {
+  overflow: hidden;
+  max-width: 100%;
+  color: #2f7f48;
+  font-size: 7px;
+  font-weight: 700;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .unit-cell:hover:not(:disabled) {
@@ -2095,12 +2501,36 @@ select:focus-visible {
   }
 }
 
+@media (max-width: 1600px) {
+  .file-actions .data-button {
+    width: 36px;
+    padding: 0;
+    justify-content: center;
+  }
+
+  .file-actions .data-button span {
+    display: none;
+  }
+}
+
 @media (max-width: 1400px) {
   .topbar {
-    grid-template-columns: minmax(175px, 1fr) auto auto auto;
+    grid-template-columns: auto minmax(0, 1fr) auto auto;
     gap: 12px;
     padding-right: 16px;
     padding-left: 16px;
+  }
+
+  .building-switch button {
+    padding: 7px 8px;
+  }
+
+  .building-switch button small {
+    display: none;
+  }
+
+  .building-switch button svg {
+    grid-row: auto;
   }
 
   .file-actions {
@@ -2123,7 +2553,8 @@ select:focus-visible {
     overflow: auto;
   }
 
-  .workspace {
+  .workspace,
+  .app-shell.is-presenting .workspace {
     height: auto;
     grid-template-columns: 1fr;
   }

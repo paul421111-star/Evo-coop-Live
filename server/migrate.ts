@@ -100,6 +100,7 @@ CREATE TABLE IF NOT EXISTS draw_declines (
   building varchar(40) NOT NULL CHECK (building IN ('odd', 'even', 'jardim-artes', 'cond-iracema')),
   ball varchar(120) NOT NULL,
   participant varchar(160) NOT NULL DEFAULT '',
+  source varchar(20) NOT NULL DEFAULT 'draw' CHECK (source IN ('draw', 'anticipator')),
   reason varchar(30) NOT NULL CHECK (reason IN ('refused', 'next-tower', 'no-answer')),
   notes varchar(240) NOT NULL DEFAULT '',
   created_by text REFERENCES app_users(id) ON DELETE SET NULL,
@@ -107,6 +108,10 @@ CREATE TABLE IF NOT EXISTS draw_declines (
 );
 CREATE UNIQUE INDEX IF NOT EXISTS draw_declines_ball_idx
   ON draw_declines(building, lower(ball));
+
+ALTER TABLE draw_declines
+  ADD COLUMN IF NOT EXISTS source varchar(20) NOT NULL DEFAULT 'draw'
+  CHECK (source IN ('draw', 'anticipator'));
 
 ALTER TABLE draw_declines
   DROP CONSTRAINT IF EXISTS draw_declines_building_check;

@@ -1,17 +1,27 @@
 import { Suspense, useEffect, useMemo, useRef, useState } from 'react'
-import { Canvas, type ThreeEvent, useThree } from '@react-three/fiber'
+import { Canvas, useFrame, type ThreeEvent, useThree } from '@react-three/fiber'
 import { Edges, Html, OrbitControls, useGLTF, useProgress } from '@react-three/drei'
-import { Group, Mesh, type BufferGeometry, type Material } from 'three'
+import {
+  CanvasTexture,
+  Group,
+  Mesh,
+  type BufferGeometry,
+  type Material,
+} from 'three'
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js'
 import type { OrbitControls as OrbitControlsImpl } from 'three-stdlib'
 import {
   STATUS_BY_ID,
   apartmentFloorCenterY,
+  buildingFloors,
   type ApartmentStatus,
   type BuildingConfig,
 } from '../config/building'
 
 export type BuildingView = 'perspective' | 'front' | 'back' | 'east' | 'west'
+
+/** Folga em metros para o realce aflorar além da fachada sem cobrir o vizinho. */
+const FACADE_OVERHANG = 0.2
 
 type Props = {
   config: BuildingConfig
@@ -19,8 +29,25 @@ type Props = {
   selectedId: string
   activeStatus: ApartmentStatus
   view: BuildingView
+  showFloorScale: boolean
   onSelect: (id: string) => void
   onActivate: (id: string) => void
+}
+
+/** Resolução da textura da régua de andares, em pixels por metro do modelo. */
+const FLOOR_SCALE_PIXELS_PER_METER = 22
+
+/** Maior afastamento horizontal ocupado pelos apartamentos da torre. */
+function towerRadius(config: BuildingConfig) {
+  return Object.values(config.unitPositions).reduce(
+    (radius, position) =>
+      Math.max(
+        radius,
+        Math.abs(position.x) + position.width / 2,
+        Math.abs(position.z) + position.depth / 2,
+      ),
+    0,
+  )
 }
 
 function viewPositions(config: BuildingConfig) {
@@ -155,13 +182,18 @@ function ApartmentVolumes({
         const isFilled = status !== 'none'
         const color = isFilled ? STATUS_BY_ID[status].color : '#38bdf8'
 
+        // A caixa cresce só para fora da torre: a face interna continua no
+        // lugar e a externa passa a aflorar pouco além da fachada.
+        const outwardX = Math.sign(position.x) * FACADE_OVERHANG
+        const outwardZ = Math.sign(position.z) * FACADE_OVERHANG
+
         return (
           <mesh
             key={apartment.id}
             position={[
-              position.x,
+              position.x + outwardX,
               apartmentFloorCenterY(config, apartment.floor),
-              position.z,
+              position.z + outwardZ,
             ]}
             renderOrder={isSelected ? 12 : 10}
             onClick={(event) => {
@@ -184,20 +216,33 @@ function ApartmentVolumes({
             }}
           >
             <boxGeometry
-              args={[position.width, config.floorHeight * 0.94, position.depth]}
+              args={[
+                position.width + FACADE_OVERHANG * 2,
+                config.floorHeight * 0.94,
+                position.depth + FACADE_OVERHANG * 2,
+              ]}
             />
             <meshBasicMaterial
               color={color}
               transparent
-              opacity={isFilled ? 0.25 : isHovered || isSelected ? 0.1 : 0.001}
+              opacity={isFilled ? 0.32 : isHovered || isSelected ? 0.12 : 0.001}
               depthWrite={false}
-              depthTest={!isFilled && !isSelected}
               toneMapped={false}
             />
             {(isSelected || isHovered) && (
               <Edges
                 color={isSelected ? '#ffffff' : '#7dd3fc'}
                 linewidth={isSelected ? 2 : 1}
+              />
+            )}
+            {isSelected && (
+              <Edges
+                color="#ffffff"
+                linewidth={1}
+                depthTest={false}
+                transparent
+                opacity={0.3}
+                renderOrder={30}
               />
             )}
           </mesh>
@@ -234,6 +279,106 @@ function SelectedApartmentLabel({
         <span>{STATUS_BY_ID[statuses[selectedId] ?? 'none'].label}</span>
       </div>
     </Html>
+  )
+}
+
+/** Régua desenhada em uma textura única, em vez de um rótulo DOM por andar. */
+function floorScaleTexture(
+  config: BuildingConfig,
+  selectedFloor: number | null,
+  bounds: { top: number; bottom: number; width: number },
+) {
+  const canvas = document.createElement('canvas')
+  canvas.width = Math.round(bounds.width * FLOOR_SCALE_PIXELS_PER_METER)
+  canvas.height = Math.round(
+    (bounds.top - bounds.bottom) * FLOOR_SCALE_PIXELS_PER_METER,
+  )
+
+  const context = canvas.getContext('2d')
+  if (!context) return null
+
+  const tickEnd = canvas.width - 6
+  const tickStart = canvas.width - 30
+  context.textAlign = 'right'
+  context.textBaseline = 'middle'
+
+  for (const floor of buildingFloors(config)) {
+    const label = floor === 0 ? 'T' : String(floor)
+    const strong = floor === config.floorCount || floor % 5 === 0
+    const active = floor === selectedFloor
+    const y =
+      (bounds.top - apartmentFloorCenterY(config, floor)) *
+      FLOOR_SCALE_PIXELS_PER_METER
+
+    context.fillStyle = active ? '#3fbfb4' : strong ? '#b9d1e0' : '#6f8798'
+    context.fillRect(active || strong ? tickStart : tickStart + 10, y - 1, tickEnd - (active || strong ? tickStart : tickStart + 10), 2)
+
+    context.font = `${active || strong ? 700 : 600} 30px 'Manrope', 'Segoe UI', sans-serif`
+    if (active) {
+      const width = context.measureText(label).width + 18
+      context.beginPath()
+      context.roundRect(tickStart - 12 - width, y - 20, width, 40, 10)
+      context.fill()
+      context.fillStyle = '#04222a'
+    }
+    context.fillText(label, tickStart - 21, y + 1)
+  }
+
+  const texture = new CanvasTexture(canvas)
+  texture.anisotropy = 4
+  return texture
+}
+
+function FloorScale({
+  config,
+  selectedFloor,
+}: {
+  config: BuildingConfig
+  selectedFloor: number | null
+}) {
+  const group = useRef<Group>(null)
+  const radius = useMemo(() => towerRadius(config) + 6, [config])
+
+  const bounds = useMemo(() => {
+    const floors = buildingFloors(config)
+    const top =
+      apartmentFloorCenterY(config, floors[floors.length - 1]) +
+      config.floorHeight
+    const bottom = apartmentFloorCenterY(config, floors[0]) - config.floorHeight
+    return { top, bottom, width: 6 }
+  }, [config])
+
+  const texture = useMemo(
+    () => floorScaleTexture(config, selectedFloor, bounds),
+    [config, selectedFloor, bounds],
+  )
+
+  useEffect(() => () => texture?.dispose(), [texture])
+
+  // A régua orbita junto com a câmera para ficar sempre à esquerda da tela,
+  // encostada na face da torre que está voltada para quem observa.
+  useFrame(({ camera }) => {
+    if (!group.current) return
+    const angle = Math.atan2(camera.position.x, camera.position.z)
+    group.current.rotation.y = angle
+    group.current.position.set(-Math.cos(angle) * radius, 0, Math.sin(angle) * radius)
+  })
+
+  if (!texture) return null
+
+  return (
+    <group ref={group}>
+      <mesh position={[0, (bounds.top + bounds.bottom) / 2, 0]} renderOrder={20}>
+        <planeGeometry args={[bounds.width, bounds.top - bounds.bottom]} />
+        <meshBasicMaterial
+          map={texture}
+          transparent
+          depthWrite={false}
+          depthTest={false}
+          toneMapped={false}
+        />
+      </mesh>
+    </group>
   )
 }
 
@@ -296,6 +441,12 @@ export function BuildingScene(props: Props) {
         onSelect={props.onSelect}
         onActivate={props.onActivate}
       />
+      {props.showFloorScale && (
+        <FloorScale
+          config={props.config}
+          selectedFloor={selectedApartment?.floor ?? null}
+        />
+      )}
       {selectedApartment && (
         <mesh position={[0, selectedFloorY + 0.03, 0]} renderOrder={15}>
           <boxGeometry args={[38, 0.12, 28]} />

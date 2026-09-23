@@ -1,26 +1,21 @@
-import {
-  useEffect,
-  useMemo,
-  useRef,
-  useState,
-  type CSSProperties,
-} from 'react'
+import { useEffect, useMemo, useState, type CSSProperties } from 'react'
 import {
   Building2,
   Check,
   ChevronDown,
   Compass,
-  Download,
   Eye,
   FileText,
   Filter,
   Layers3,
   LogOut,
+  Maximize2,
+  Minimize2,
   RotateCcw,
+  Ruler,
   Settings,
   ShieldCheck,
   Ticket,
-  Upload,
   X,
 } from 'lucide-react'
 import { getCurrentUser, logout, type AppUser } from './auth/localAuth'
@@ -46,18 +41,11 @@ import {
   type Ending,
 } from './config/building'
 import type { DrawDecline } from './config/drawDeclines'
+import { SOLAR_ILLUSTRATION_BY_ID } from './config/surroundings'
 import {
-  SOLAR_ILLUSTRATION_BY_ID,
-  type SolarIllustrationsConfig,
-  type SurroundingsConfig,
-} from './config/surroundings'
-import {
-  normalizeAssignments,
-  normalizeStatuses,
   useApartmentStore,
   type ApartmentAssignments,
   type ApartmentStatuses,
-  type AuditEvent,
 } from './store/apartments'
 import { generateBuildingPdf } from './utils/pdfReport'
 import './styles.css'
@@ -109,10 +97,11 @@ function App() {
   const [justification, setJustification] = useState('')
   const [modalError, setModalError] = useState('')
   const [showEnvironment, setShowEnvironment] = useState(true)
+  const [showFloorScale, setShowFloorScale] = useState(true)
   const [declines, setDeclines] = useState<DrawDecline[]>([])
   const [declineError, setDeclineError] = useState('')
   const [declineBusy, setDeclineBusy] = useState(false)
-  const importInput = useRef<HTMLInputElement>(null)
+  const [presenting, setPresenting] = useState(false)
 
   const refreshMap = async () => {
     const snapshot = await api.map()
@@ -140,6 +129,37 @@ function App() {
     })
     // A hidratação acontece uma vez ao restaurar a sessão.
     // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+
+  // A tela cheia do navegador pode ser negada (ou nem existir no host); nesse
+  // caso o modo apresentação segue valendo apenas escondendo o cabeçalho.
+  const enterPresentation = async () => {
+    setPresenting(true)
+    await document.documentElement
+      .requestFullscreen?.()
+      .catch(() => undefined)
+  }
+
+  const exitPresentation = async () => {
+    setPresenting(false)
+    if (document.fullscreenElement) {
+      await document.exitFullscreen().catch(() => undefined)
+    }
+  }
+
+  useEffect(() => {
+    const syncFullscreen = () => {
+      if (!document.fullscreenElement) setPresenting(false)
+    }
+    const handleEscape = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') setPresenting(false)
+    }
+    document.addEventListener('fullscreenchange', syncFullscreen)
+    window.addEventListener('keydown', handleEscape)
+    return () => {
+      document.removeEventListener('fullscreenchange', syncFullscreen)
+      window.removeEventListener('keydown', handleEscape)
+    }
   }, [])
 
   const selectBuilding = (kind: BuildingKind) => {
@@ -197,6 +217,13 @@ function App() {
 
   const filledCount = config.apartments.length - counts.none
   const progress = Math.round((filledCount / config.apartments.length) * 100)
+  const buildingDeclines = declines.filter(
+    (item) => item.building === building,
+  )
+  const anticipatorDeclines = buildingDeclines.filter(
+    (item) => item.source === 'anticipator',
+  ).length
+  const drawDeclines = buildingDeclines.length - anticipatorDeclines
 
   const showNotice = (message: string) => {
     setNotice(message)
@@ -257,7 +284,7 @@ function App() {
       )
     ) {
       setModalError(
-        'Esta bolinha está na lista de quem não aceitou o sorteio. Remova o registro antes de reservar.',
+        'Esta bolinha está na Lista de Abdicação. Remova o registro antes de reservar.',
       )
       return
     }
@@ -311,89 +338,6 @@ function App() {
     }
   }
 
-  const exportData = () => {
-    const payload = JSON.stringify(
-      {
-        version: 3,
-        project: 'evo-coop-live',
-        exportedAt: new Date().toISOString(),
-        statuses: allStatuses,
-        assignments,
-        auditLog,
-        surroundings,
-        solarIllustrations,
-        declines,
-      },
-      null,
-      2,
-    )
-    const url = URL.createObjectURL(
-      new Blob([payload], { type: 'application/json;charset=utf-8' }),
-    )
-    const link = document.createElement('a')
-    link.href = url
-    link.download = `evo-coop-live-${new Date().toISOString().slice(0, 10)}.json`
-    link.click()
-    URL.revokeObjectURL(url)
-    showNotice('Arquivo exportado')
-  }
-
-  const importData = async (file: File) => {
-    try {
-      const parsed = JSON.parse(await file.text()) as {
-        statuses?: unknown
-        assignments?: unknown
-        auditLog?: unknown
-        surroundings?: unknown
-        solarIllustrations?: unknown
-      }
-      const normalized = normalizeStatuses(parsed.statuses ?? parsed)
-      const normalizedAssignments = normalizeAssignments(parsed.assignments)
-      if (!normalized) throw new Error('Formato inválido')
-      if (!normalizedAssignments) throw new Error('Sorteios inválidos')
-      if (
-        !window.confirm(
-          'Importar este mapa substituirá os dados atuais do banco. Deseja continuar?',
-        )
-      ) {
-        return
-      }
-      const importedSurroundings =
-        parsed.surroundings &&
-        typeof parsed.surroundings === 'object' &&
-        !Array.isArray(parsed.surroundings)
-          ? (parsed.surroundings as SurroundingsConfig)
-          : surroundings
-      const importedSolarIllustrations =
-        parsed.solarIllustrations &&
-        typeof parsed.solarIllustrations === 'object' &&
-        !Array.isArray(parsed.solarIllustrations)
-          ? (parsed.solarIllustrations as SolarIllustrationsConfig)
-          : solarIllustrations
-      await api.importMap({
-        statuses: normalized as ApartmentStatuses,
-        assignments: normalizedAssignments as ApartmentAssignments,
-        auditLog: (Array.isArray(parsed.auditLog)
-          ? parsed.auditLog
-          : []) as AuditEvent[],
-        surroundings: importedSurroundings,
-        solarIllustrations: importedSolarIllustrations,
-      })
-      replaceData(
-        normalized as ApartmentStatuses,
-        normalizedAssignments as ApartmentAssignments,
-        (Array.isArray(parsed.auditLog) ? parsed.auditLog : []) as AuditEvent[],
-        importedSurroundings,
-        importedSolarIllustrations,
-      )
-      showNotice('Mapa importado com sucesso')
-    } catch {
-      showNotice('Não foi possível importar o arquivo')
-    } finally {
-      if (importInput.current) importInput.current.value = ''
-    }
-  }
-
   const generateReport = async (
     reportAssignments: ApartmentAssignments = assignments,
     reportStatuses: Record<string, ApartmentStatus> = statuses,
@@ -431,7 +375,7 @@ function App() {
   }
 
   return (
-    <div className="app-shell">
+    <div className={`app-shell ${presenting ? 'is-presenting' : ''}`}>
       <header className="topbar">
         <div className="brand">
           <span className="brand-mark">
@@ -450,6 +394,7 @@ function App() {
               type="button"
               className={building === kind ? 'active' : ''}
               onClick={() => selectBuilding(kind)}
+              title={`${BUILDING_CONFIGS[kind].label} · ${BUILDING_CONFIGS[kind].description}`}
             >
               <Building2 size={14} />
               <span>{BUILDING_CONFIGS[kind].label}</span>
@@ -493,21 +438,13 @@ function App() {
               <Settings size={16} /> <span>Administrar</span>
             </button>
           )}
-          <input
-            ref={importInput}
-            type="file"
-            accept="application/json,.json"
-            hidden
-            onChange={(event) => {
-              const file = event.target.files?.[0]
-              if (file) void importData(file)
-            }}
-          />
-          <button type="button" className="ghost-button data-button" onClick={() => importInput.current?.click()}>
-            <Upload size={16} /> <span>Importar</span>
-          </button>
-          <button type="button" className="ghost-button data-button" onClick={exportData}>
-            <Download size={16} /> <span>Exportar</span>
+          <button
+            type="button"
+            className="ghost-button data-button"
+            title="Modo apresentação (tela cheia)"
+            onClick={() => void enterPresentation()}
+          >
+            <Maximize2 size={16} /> <span>Tela cheia</span>
           </button>
           <button
             type="button"
@@ -548,6 +485,15 @@ function App() {
             <div className="viewer-assists">
               <button
                 type="button"
+                className={`environment-toggle ${showFloorScale ? 'active' : ''}`}
+                onClick={() => setShowFloorScale((visible) => !visible)}
+                aria-pressed={showFloorScale}
+                title="Mostrar a numeração dos andares na lateral da torre"
+              >
+                <Ruler size={14} /> Andares
+              </button>
+              <button
+                type="button"
                 className={`environment-toggle ${showEnvironment ? 'active' : ''}`}
                 onClick={() => setShowEnvironment((visible) => !visible)}
                 aria-pressed={showEnvironment}
@@ -557,6 +503,17 @@ function App() {
               <span className="viewer-hint">
                 <Eye size={14} /> Arraste para girar · role para zoom
               </span>
+              {presenting && (
+                <button
+                  type="button"
+                  className="presentation-exit"
+                  onClick={() => void exitPresentation()}
+                  title="Sair do modo apresentação"
+                >
+                  <Minimize2 size={14} /> Sair da tela cheia
+                  <kbd>Esc</kbd>
+                </button>
+              )}
             </div>
           </div>
 
@@ -568,6 +525,7 @@ function App() {
                 selectedId={selectedId}
                 activeStatus="reserved"
                 view={view}
+                showFloorScale={showFloorScale}
                 onSelect={selectApartment}
                 onActivate={requestApartment}
               />
@@ -657,28 +615,55 @@ function App() {
         </section>
 
         <aside className="control-panel">
-          <section className="panel-section palette-section">
-            <div className="section-heading">
+          <section className="panel-section draw-overview-section">
+            <div className="section-heading draw-overview-heading">
               <div>
-                <span className="eyebrow">Modo do sorteio</span>
-                <h2>Reserva de apartamentos</h2>
+                <span className="eyebrow">Painel do sorteio</span>
+                <h2>Visão geral do empreendimento</h2>
               </div>
               <ShieldCheck size={21} className="reservation-shield" />
             </div>
-            <div className="reservation-mode-card">
-              <span className="color-swatch" style={{ '--status-color': STATUS_BY_ID.reserved.color } as CSSProperties}>
-                <Check size={12} />
+            <div className="draw-metrics-grid">
+              <article>
+                <strong>{config.apartments.length}</strong>
+                <span>Total</span>
+              </article>
+              <article className="is-chosen">
+                <strong>{filledCount}</strong>
+                <span>Escolhidos</span>
+              </article>
+              <article className="is-free">
+                <strong>{counts.none}</strong>
+                <span>Livres</span>
+              </article>
+              <article className="is-abdication">
+                <strong>{buildingDeclines.length}</strong>
+                <span>Abdicações</span>
+              </article>
+              <article>
+                <strong>{anticipatorDeclines}</strong>
+                <span>Antecipador</span>
+              </article>
+              <article>
+                <strong>{drawDeclines}</strong>
+                <span>Sorteio</span>
+              </article>
+            </div>
+            <div className="draw-progress">
+              <span>
+                <b>{progress}% concluído</b>
+                <small>
+                  {counts.none} unidades disponíveis para escolha
+                </small>
               </span>
               <div>
-                <b>Reservado</b>
-                <small>Clique para selecionar e confirme para registrar</small>
+                <i style={{ width: `${progress}%` }} />
               </div>
-              <strong>{counts.reserved}</strong>
             </div>
           </section>
 
           <DeclinedDrawsPanel
-            items={declines.filter((item) => item.building === building)}
+            items={buildingDeclines}
             busy={declineBusy}
             error={declineError}
             onAdd={async (input) => {
@@ -694,7 +679,7 @@ function App() {
                   ...input,
                 })
                 setDeclines((current) => [created, ...current])
-                showNotice(`Bolinha ${created.ball} registrada como não aceitou`)
+                showNotice(`Bolinha ${created.ball} incluída na Lista de Abdicação`)
                 return true
               } catch (error) {
                 setDeclineError(
@@ -949,6 +934,7 @@ function App() {
           <ApartmentGrid
             config={config}
             statuses={statuses}
+            assignments={assignments}
             selectedId={selectedId}
             floorFilter={floorFilter}
             endingFilter={endingFilter}

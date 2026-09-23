@@ -2,15 +2,18 @@ import type { CSSProperties } from 'react'
 import {
   STATUS_BY_ID,
   apartmentId,
+  apartmentStorageId,
   buildingFloors,
   type ApartmentStatus,
   type BuildingConfig,
   type Ending,
 } from '../config/building'
+import type { ApartmentAssignments } from '../store/apartments'
 
 type Props = {
   config: BuildingConfig
   statuses: Record<string, ApartmentStatus>
+  assignments: ApartmentAssignments
   selectedId: string
   floorFilter: number | 'all'
   endingFilter: Ending | 'all'
@@ -24,6 +27,7 @@ type StatusStyle = CSSProperties & { '--unit-color': string }
 export function ApartmentGrid({
   config,
   statuses,
+  assignments,
   selectedId,
   floorFilter,
   endingFilter,
@@ -89,6 +93,8 @@ export function ApartmentGrid({
                 )
               }
               const status = statuses[id] ?? 'none'
+              const assignment =
+                assignments[apartmentStorageId(config.kind, id)]
               const hidden = statusFilter !== 'all' && status !== statusFilter
               const statusData = STATUS_BY_ID[status]
               return (
@@ -106,8 +112,15 @@ export function ApartmentGrid({
                   aria-pressed={selectedId === id}
                   title={`Apto ${id} · ${statusData.label} · duplo clique para registrar`}
                 >
-                  <span className="unit-dot" />
-                  <span>{id}</span>
+                  <span className="unit-cell-main">
+                    <span className="unit-dot" />
+                    <b>{id}</b>
+                  </span>
+                  {assignment && (
+                    <small title={`Bolinha ${assignment.ball}`}>
+                      {assignment.ball}
+                    </small>
+                  )}
                 </button>
               )
             })}

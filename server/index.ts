@@ -286,6 +286,7 @@ app.delete(
 )
 
 const DECLINE_REASONS = ['refused', 'next-tower', 'no-answer'] as const
+const DECLINE_SOURCES = ['draw', 'anticipator'] as const
 
 function declineData(row: Record<string, unknown>) {
   return {
@@ -293,6 +294,7 @@ function declineData(row: Record<string, unknown>) {
     building: String(row.building),
     ball: String(row.ball ?? ''),
     participant: String(row.participant ?? ''),
+    source: String(row.source ?? 'draw'),
     reason: String(row.reason),
     notes: String(row.notes ?? ''),
     createdBy: String(row.created_by_name ?? 'Registro anterior'),
@@ -415,7 +417,7 @@ app.put(
     if (declinedBall.rows[0]) {
       response.status(409).json({
         error:
-          'Esta bolinha está na lista de quem não aceitou o sorteio. Remova o registro antes de reservar.',
+          'Esta bolinha está na Lista de Abdicação. Remova o registro antes de reservar.',
       })
       return
     }
@@ -748,6 +750,7 @@ app.post(
     const building = request.body?.building as Building
     const ball = String(request.body?.ball ?? '').trim()
     const participant = String(request.body?.participant ?? '').trim()
+    const source = String(request.body?.source ?? 'draw')
     const reason = String(request.body?.reason ?? '')
     const notes = String(request.body?.notes ?? '').trim().slice(0, 240)
     if (!actor || !BUILDINGS.includes(building) || !ball) {
@@ -756,6 +759,10 @@ app.post(
     }
     if (!DECLINE_REASONS.includes(reason as (typeof DECLINE_REASONS)[number])) {
       response.status(400).json({ error: 'Selecione o motivo.' })
+      return
+    }
+    if (!DECLINE_SOURCES.includes(source as (typeof DECLINE_SOURCES)[number])) {
+      response.status(400).json({ error: 'Selecione a origem da abdicação.' })
       return
     }
     const reserved = await pool.query(
@@ -772,14 +779,15 @@ app.post(
     try {
       const { rows } = await pool.query(
         `INSERT INTO draw_declines
-          (id, building, ball, participant, reason, notes, created_by)
-         VALUES ($1, $2, $3, $4, $5, $6, $7)
-         RETURNING *, $8::text AS created_by_name`,
+          (id, building, ball, participant, source, reason, notes, created_by)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+         RETURNING *, $9::text AS created_by_name`,
         [
           randomUUID(),
           building,
           ball,
           participant,
+          source,
           reason,
           notes,
           actor.id,
@@ -790,7 +798,7 @@ app.post(
     } catch (error) {
       if ((error as { code?: string }).code === '23505') {
         response.status(409).json({
-          error: 'Esta bolinha já está na lista de quem não aceitou.',
+          error: 'Esta bolinha já está na Lista de Abdicação.',
         })
         return
       }

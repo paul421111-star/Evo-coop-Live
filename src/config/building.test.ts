@@ -36,11 +36,13 @@ describe('configuração do edifício', () => {
 
   it('gera térreo com 7 e 28 pavimentos com 8 no Cond. Iracema', () => {
     const iracema = BUILDING_CONFIGS['cond-iracema']
+    expect(iracema.floorCount).toBe(28)
     expect(iracema.apartments).toHaveLength(231)
     expect(iracema.apartmentById['01']).toBeDefined()
     expect(iracema.apartmentById['07']).toBeDefined()
     expect(iracema.apartmentById['08']).toBeUndefined()
     expect(iracema.apartmentById['288']).toBeDefined()
+    expect(iracema.apartmentById['298']).toBeUndefined()
     expect(iracema.groundFloorModel).toContain('Terreo_7_Apartamentos')
   })
 
@@ -57,15 +59,15 @@ describe('configuração do edifício', () => {
     expect(new Set(quadrants)).toHaveLength(4)
   })
 
-  it('posiciona os finais ímpares em sentido horário na planta', () => {
+  it('posiciona os finais ímpares como no modelo: 1 e 2 nos fundos, 3 e 4 na frente', () => {
     const positions = BUILDING_CONFIGS.odd.unitPositions
     expect(positions[1].x).toBeLessThan(0)
     expect(positions[1].z).toBeLessThan(0)
     expect(positions[2].x).toBeGreaterThan(0)
     expect(positions[2].z).toBeLessThan(0)
-    expect(positions[3].x).toBeGreaterThan(0)
+    expect(positions[3].x).toBeLessThan(0)
     expect(positions[3].z).toBeGreaterThan(0)
-    expect(positions[4].x).toBeLessThan(0)
+    expect(positions[4].x).toBeGreaterThan(0)
     expect(positions[4].z).toBeGreaterThan(0)
   })
 })

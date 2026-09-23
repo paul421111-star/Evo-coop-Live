@@ -9,6 +9,7 @@ import type {
 import type {
   DrawDecline,
   DrawDeclineReason,
+  DrawDeclineSource,
 } from '../config/drawDeclines'
 import type {
   ApartmentAssignments,
@@ -123,6 +124,7 @@ export const api = {
     building: BuildingKind
     ball: string
     participant: string
+    source: DrawDeclineSource
     reason: DrawDeclineReason
     notes?: string
   }) =>

@@ -1,10 +1,13 @@
-import { useState } from 'react'
-import { PhoneOff, Plus, X } from 'lucide-react'
+import { useMemo, useState } from 'react'
+import { Plus, Search, UserRoundX, X } from 'lucide-react'
 import {
   DECLINE_REASON_BY_ID,
   DECLINE_REASON_OPTIONS,
+  DECLINE_SOURCE_BY_ID,
+  DECLINE_SOURCE_OPTIONS,
   type DrawDecline,
   type DrawDeclineReason,
+  type DrawDeclineSource,
 } from '../config/drawDeclines'
 
 type Props = {
@@ -14,6 +17,7 @@ type Props = {
   onAdd: (input: {
     ball: string
     participant: string
+    source: DrawDeclineSource
     reason: DrawDeclineReason
     notes: string
   }) => Promise<boolean>
@@ -29,13 +33,29 @@ export function DeclinedDrawsPanel({
 }: Props) {
   const [ball, setBall] = useState('')
   const [participant, setParticipant] = useState('')
+  const [source, setSource] = useState<DrawDeclineSource>('draw')
   const [reason, setReason] = useState<DrawDeclineReason>('refused')
   const [notes, setNotes] = useState('')
+  const [search, setSearch] = useState('')
+
+  const visibleItems = useMemo(() => {
+    const query = search.trim().toLocaleLowerCase('pt-BR')
+    if (!query) return items
+    return items.filter((item) =>
+      [
+        item.ball,
+        item.participant,
+        DECLINE_SOURCE_BY_ID[item.source],
+        DECLINE_REASON_BY_ID[item.reason],
+      ].some((value) => value.toLocaleLowerCase('pt-BR').includes(query)),
+    )
+  }, [items, search])
 
   const submit = async () => {
     const saved = await onAdd({
       ball: ball.trim(),
       participant: participant.trim(),
+      source,
       reason,
       notes: notes.trim(),
     })
@@ -43,29 +63,32 @@ export function DeclinedDrawsPanel({
     setBall('')
     setParticipant('')
     setNotes('')
+    setSource('draw')
     setReason('refused')
   }
 
   return (
-    <section className="panel-section declined-section">
-      <div className="section-heading compact">
-        <h2>
-          <PhoneOff size={16} /> Não aceitaram
-        </h2>
-        <span className="declined-count">{items.length}</span>
+    <section className="panel-section abdication-section">
+      <div className="abdication-heading">
+        <span className="abdication-icon">
+          <UserRoundX size={18} />
+        </span>
+        <div>
+          <h2>Lista de Abdicação</h2>
+          <p>Sorteados que não seguiram com a escolha nesta etapa.</p>
+        </div>
+        <span className="abdication-count">
+          {items.length} {items.length === 1 ? 'registro' : 'registros'}
+        </span>
       </div>
-      <p className="declined-hint">
-        Registre bolinhas que recusaram, deixaram para a próxima torre ou não
-        atenderam o celular.
-      </p>
 
-      <div className="declined-form">
+      <div className="abdication-form">
         <label>
-          <span>Bolinha *</span>
+          <span>Bolinha / cota *</span>
           <input
             value={ball}
             onChange={(event) => setBall(event.target.value)}
-            placeholder="Ex.: 127"
+            placeholder="Ex.: 110396"
             onKeyDown={(event) => {
               if (event.key === 'Enter') void submit()
             }}
@@ -79,7 +102,22 @@ export function DeclinedDrawsPanel({
             placeholder="Opcional"
           />
         </label>
-        <label className="declined-reason">
+        <label>
+          <span>Origem *</span>
+          <select
+            value={source}
+            onChange={(event) =>
+              setSource(event.target.value as DrawDeclineSource)
+            }
+          >
+            {DECLINE_SOURCE_OPTIONS.map((option) => (
+              <option key={option.id} value={option.id}>
+                {option.label}
+              </option>
+            ))}
+          </select>
+        </label>
+        <label>
           <span>Motivo *</span>
           <select
             value={reason}
@@ -94,7 +132,7 @@ export function DeclinedDrawsPanel({
             ))}
           </select>
         </label>
-        <label className="declined-notes">
+        <label className="abdication-notes">
           <span>Observação</span>
           <input
             value={notes}
@@ -104,29 +142,50 @@ export function DeclinedDrawsPanel({
         </label>
         <button
           type="button"
-          className="declined-add-button"
+          className="abdication-add-button"
           disabled={busy}
           onClick={() => void submit()}
         >
           <Plus size={14} />
-          Registrar
+          Adicionar à lista
         </button>
       </div>
 
       {error && <p className="modal-error">{error}</p>}
 
-      {items.length > 0 && (
-        <ul className="declined-list">
-          {items.map((item) => (
+      <div className="abdication-list-toolbar">
+        <b>Registros recentes</b>
+        <label>
+          <Search size={13} />
+          <input
+            value={search}
+            onChange={(event) => setSearch(event.target.value)}
+            placeholder="Buscar cota ou nome"
+          />
+        </label>
+      </div>
+
+      {visibleItems.length > 0 ? (
+        <ul className="abdication-list">
+          {visibleItems.map((item) => (
             <li key={item.id}>
-              <div>
-                <b>Bolinha {item.ball}</b>
-                <span>
-                  {item.participant || 'Sem nome'} ·{' '}
-                  {DECLINE_REASON_BY_ID[item.reason]}
-                </span>
-                {item.notes && <small>{item.notes}</small>}
-                <small>Incluído por {item.createdBy}</small>
+              <span className="abdication-ball">{item.ball}</span>
+              <div className="abdication-details">
+                <div>
+                  <b>{item.participant || 'Participante não informado'}</b>
+                  <span className={`abdication-reason is-${item.reason}`}>
+                    {DECLINE_REASON_BY_ID[item.reason]}
+                  </span>
+                </div>
+                <small>
+                  {DECLINE_SOURCE_BY_ID[item.source]} ·{' '}
+                  {new Intl.DateTimeFormat('pt-BR', {
+                    dateStyle: 'short',
+                    timeStyle: 'short',
+                  }).format(new Date(item.createdAt))}
+                </small>
+                {item.notes && <p>{item.notes}</p>}
+                <small>Registrado por {item.createdBy}</small>
               </div>
               <button
                 type="button"
@@ -140,6 +199,12 @@ export function DeclinedDrawsPanel({
             </li>
           ))}
         </ul>
+      ) : (
+        <div className="abdication-empty">
+          {items.length
+            ? 'Nenhum registro corresponde à busca.'
+            : 'Nenhuma abdicação registrada neste empreendimento.'}
+        </div>
       )}
     </section>
   )
