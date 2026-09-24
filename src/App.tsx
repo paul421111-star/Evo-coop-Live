@@ -11,6 +11,7 @@ import {
   LogOut,
   Maximize2,
   Minimize2,
+  Palette,
   RotateCcw,
   Ruler,
   Settings,
@@ -49,7 +50,6 @@ import {
   type DrawGroup,
 } from './config/drawGroups'
 import {
-  EDGE_LANDMARK_BY_ID,
   SOLAR_ILLUSTRATION_BY_ID,
   edgeLandmarksForBuilding,
 } from './config/surroundings'
@@ -130,6 +130,7 @@ function App() {
   const [modalError, setModalError] = useState('')
   const [showEnvironment, setShowEnvironment] = useState(true)
   const [showFloorScale, setShowFloorScale] = useState(true)
+  const [showAvailability, setShowAvailability] = useState(true)
   const [declines, setDeclines] = useState<DrawDecline[]>([])
   const [declineError, setDeclineError] = useState('')
   const [declineBusy, setDeclineBusy] = useState(false)
@@ -611,6 +612,15 @@ function App() {
               </button>
               <button
                 type="button"
+                className={`environment-toggle ${showAvailability ? 'active' : ''}`}
+                onClick={() => setShowAvailability((visible) => !visible)}
+                aria-pressed={showAvailability}
+                title="Pintar as unidades livres de verde e as reservadas de laranja"
+              >
+                <Palette size={14} /> Disponibilidade
+              </button>
+              <button
+                type="button"
                 className={`environment-toggle ${showEnvironment ? 'active' : ''}`}
                 onClick={() => setShowEnvironment((visible) => !visible)}
                 aria-pressed={showEnvironment}
@@ -643,6 +653,7 @@ function App() {
                 activeStatus="reserved"
                 view={view}
                 showFloorScale={showFloorScale}
+                highlightAvailability={showAvailability}
                 onSelect={selectApartment}
                 onActivate={requestApartment}
               />
@@ -669,6 +680,30 @@ function App() {
                 <b>·</b>
                 <span>{config.apartments.length} unidades</span>
               </div>
+              {showAvailability && (
+                <div className="availability-legend">
+                  <span>
+                    <i
+                      style={
+                        {
+                          '--legend-color': STATUS_BY_ID.available.color,
+                        } as CSSProperties
+                      }
+                    />
+                    Disponível
+                  </span>
+                  <span>
+                    <i
+                      style={
+                        {
+                          '--legend-color': STATUS_BY_ID.reserved.color,
+                        } as CSSProperties
+                      }
+                    />
+                    Reservado
+                  </span>
+                </div>
+              )}
             </div>
             {showFloorPlan && selectedApartment && (
               <div className="floor-plan-view">
@@ -724,6 +759,7 @@ function App() {
                   statuses={statuses}
                   modelUrl={floorPlanModel}
                   endings={floorPlanEndings}
+                  highlightAvailability={showAvailability}
                   onSelect={selectApartment}
                   onActivate={requestApartment}
                 />
@@ -922,30 +958,6 @@ function App() {
                           .updatedBy
                       }`}
                   </small>
-                </div>
-              </div>
-            )}
-            {selectedApartment && (
-              <div className="unit-indications">
-                <span className="eyebrow">Características desta posição</span>
-                <div className="unit-indication-tags">
-                  {selectedEdgeLandmarks.map((id) => {
-                    const option = EDGE_LANDMARK_BY_ID[id]
-                    return (
-                      <span className="is-edge" key={id}>
-                        <SurroundingIcon icon={option.icon} size={14} />
-                        {option.label}
-                      </span>
-                    )
-                  })}
-                  {(surroundings[building][selectedApartment.ending] ?? []).map(
-                    (item) => (
-                      <span key={item.id}>
-                        <SurroundingIcon icon={item.icon} size={14} />
-                        {item.label}
-                      </span>
-                    ),
-                  )}
                 </div>
               </div>
             )}

@@ -30,6 +30,7 @@ type Props = {
   activeStatus: ApartmentStatus
   view: BuildingView
   showFloorScale: boolean
+  highlightAvailability: boolean
   onSelect: (id: string) => void
   onActivate: (id: string) => void
 }
@@ -164,11 +165,17 @@ function ApartmentVolumes({
   config,
   statuses,
   selectedId,
+  highlightAvailability,
   onSelect,
   onActivate,
 }: Pick<
   Props,
-  'config' | 'statuses' | 'selectedId' | 'onSelect' | 'onActivate'
+  | 'config'
+  | 'statuses'
+  | 'selectedId'
+  | 'highlightAvailability'
+  | 'onSelect'
+  | 'onActivate'
 >) {
   const [hoveredId, setHoveredId] = useState('')
 
@@ -180,7 +187,22 @@ function ApartmentVolumes({
         const isSelected = selectedId === apartment.id
         const isHovered = hoveredId === apartment.id
         const isFilled = status !== 'none'
-        const color = isFilled ? STATUS_BY_ID[status].color : '#38bdf8'
+        const color = isFilled
+          ? STATUS_BY_ID[status].color
+          : highlightAvailability
+            ? STATUS_BY_ID.available.color
+            : '#38bdf8'
+        const opacity = isFilled
+          ? highlightAvailability
+            ? 0.46
+            : 0.32
+          : highlightAvailability
+            ? isHovered || isSelected
+              ? 0.3
+              : 0.17
+            : isHovered || isSelected
+              ? 0.12
+              : 0.001
 
         // A caixa cresce só para fora da torre: a face interna continua no
         // lugar e a externa passa a aflorar pouco além da fachada.
@@ -225,7 +247,7 @@ function ApartmentVolumes({
             <meshBasicMaterial
               color={color}
               transparent
-              opacity={isFilled ? 0.32 : isHovered || isSelected ? 0.12 : 0.001}
+              opacity={opacity}
               depthWrite={false}
               toneMapped={false}
             />
@@ -438,6 +460,7 @@ export function BuildingScene(props: Props) {
         config={props.config}
         statuses={props.statuses}
         selectedId={props.selectedId}
+        highlightAvailability={props.highlightAvailability}
         onSelect={props.onSelect}
         onActivate={props.onActivate}
       />

@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react'
-import { Plus, Search, UserRoundX, X } from 'lucide-react'
+import { ChevronDown, Plus, Search, UserRoundX, X } from 'lucide-react'
 import {
   DECLINE_REASON_BY_ID,
   DECLINE_REASON_OPTIONS,
@@ -47,6 +47,7 @@ export function DeclinedDrawsPanel({
   const [reason, setReason] = useState<DrawDeclineReason>('refused')
   const [notes, setNotes] = useState('')
   const [search, setSearch] = useState('')
+  const [expanded, setExpanded] = useState(false)
 
   const visibleItems = useMemo(() => {
     const query = search.trim().toLocaleLowerCase('pt-BR')
@@ -78,11 +79,19 @@ export function DeclinedDrawsPanel({
     setNotes('')
     setSource('draw')
     setReason('refused')
+    setExpanded(true)
   }
 
   return (
-    <section className="panel-section abdication-section">
-      <div className="abdication-heading">
+    <section
+      className={`panel-section abdication-section ${expanded ? 'is-open' : ''}`}
+    >
+      <button
+        type="button"
+        className="abdication-heading"
+        aria-expanded={expanded}
+        onClick={() => setExpanded((open) => !open)}
+      >
         <span className="abdication-icon">
           <UserRoundX size={18} />
         </span>
@@ -93,8 +102,11 @@ export function DeclinedDrawsPanel({
         <span className="abdication-count">
           {items.length} {items.length === 1 ? 'registro' : 'registros'}
         </span>
-      </div>
+        <ChevronDown size={16} className="abdication-chevron" />
+      </button>
 
+      {expanded && (
+        <>
       <div className="abdication-form">
         <label>
           <span>{activeGroup ? 'Bolinha sorteada *' : 'Código associado *'}</span>
@@ -243,6 +255,8 @@ export function DeclinedDrawsPanel({
             ? 'Nenhum registro corresponde à busca.'
             : 'Nenhuma abdicação registrada neste empreendimento.'}
         </div>
+      )}
+        </>
       )}
     </section>
   )

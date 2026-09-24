@@ -17,6 +17,7 @@ type Props = {
   modelUrl?: string
   endings?: Ending[]
   overlayY?: number
+  highlightAvailability?: boolean
   onSelect: (id: string) => void
   onActivate: (id: string) => void
 }
@@ -61,6 +62,7 @@ function FloorUnits({
   statuses,
   endings,
   overlayY: configuredOverlayY,
+  highlightAvailability = false,
   onSelect,
   onActivate,
 }: Props) {
@@ -77,7 +79,11 @@ function FloorUnits({
         const selected = selectedId === id
         const hovered = hoveredId === id
         const color =
-          status === 'none' ? '#38bdf8' : STATUS_BY_ID[status].color
+          status !== 'none'
+            ? STATUS_BY_ID[status].color
+            : highlightAvailability
+              ? STATUS_BY_ID.available.color
+              : '#38bdf8'
 
         return (
           <group key={id}>
@@ -108,7 +114,15 @@ function FloorUnits({
                 color={color}
                 transparent
                 opacity={
-                  status !== 'none' ? 0.38 : selected || hovered ? 0.2 : 0.025
+                  status !== 'none'
+                    ? 0.38
+                    : highlightAvailability
+                      ? selected || hovered
+                        ? 0.34
+                        : 0.22
+                      : selected || hovered
+                        ? 0.2
+                        : 0.025
                 }
                 depthWrite={false}
                 toneMapped={false}

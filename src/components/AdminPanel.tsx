@@ -99,6 +99,7 @@ export function AdminPanel({
   const [archiveNotes, setArchiveNotes] = useState('')
   const [archiveGroup, setArchiveGroup] = useState<DrawGroup | undefined>()
   const [archiveBusy, setArchiveBusy] = useState(false)
+  const [archiveConfirmOpen, setArchiveConfirmOpen] = useState(false)
   const [archiveError, setArchiveError] = useState('')
   const [exportingId, setExportingId] = useState<string | null>(null)
 
@@ -235,15 +236,11 @@ export function AdminPanel({
     }
   }
 
+  const archiveLabel = `${BUILDING_CONFIGS[building].label}${
+    resolvedArchiveGroup ? ` · G${resolvedArchiveGroup}` : ''
+  }`
+
   const archiveSession = async () => {
-    const groupLabel = resolvedArchiveGroup ? ` G${resolvedArchiveGroup}` : ''
-    if (
-      !window.confirm(
-        `Arquivar ${BUILDING_CONFIGS[building].label}${groupLabel} e limpar o mapa ao vivo? Os dados atuais ficam no histórico.`,
-      )
-    ) {
-      return
-    }
     setArchiveBusy(true)
     setArchiveError('')
     try {
@@ -254,6 +251,7 @@ export function AdminPanel({
       })
       setArchives((current) => [created, ...current])
       setArchiveNotes('')
+      setArchiveConfirmOpen(false)
       await onArchived(building, resolvedArchiveGroup)
     } catch (error) {
       setArchiveError(
@@ -261,6 +259,7 @@ export function AdminPanel({
           ? error.message
           : 'Não foi possível arquivar o sorteio.',
       )
+      setArchiveConfirmOpen(false)
     } finally {
       setArchiveBusy(false)
     }
@@ -391,10 +390,7 @@ export function AdminPanel({
           </div>
           <div className="archive-live-card">
             <div>
-              <b>
-                {BUILDING_CONFIGS[building].label}
-                {resolvedArchiveGroup ? ` · G${resolvedArchiveGroup}` : ''}
-              </b>
+              <b>{archiveLabel}</b>
               <small>
                 {liveReservationCount} reservas · {liveDeclineCount} abdicações
                 no mapa ao vivo
@@ -429,10 +425,10 @@ export function AdminPanel({
               type="button"
               className="archive-close-button"
               disabled={archiveBusy}
-              onClick={() => void archiveSession()}
+              onClick={() => setArchiveConfirmOpen(true)}
             >
               <Archive size={14} />
-              {archiveBusy ? 'Arquivando' : 'Arquivar e limpar mapa'}
+              Arquivar e limpar mapa
             </button>
           </div>
           {archiveError && <p className="admin-error">{archiveError}</p>}
@@ -634,6 +630,66 @@ export function AdminPanel({
           </div>
         </section>
       </section>
+
+      {archiveConfirmOpen && (
+        <div
+          className="admin-confirm-backdrop"
+          role="presentation"
+          onMouseDown={(event) => {
+            if (event.target === event.currentTarget && !archiveBusy) {
+              setArchiveConfirmOpen(false)
+            }
+          }}
+        >
+          <section
+            className="admin-confirm-dialog"
+            role="alertdialog"
+            aria-modal="true"
+            aria-labelledby="archive-confirm-title"
+            aria-describedby="archive-confirm-copy"
+          >
+            <span className="eyebrow">Confirmação necessária</span>
+            <h3 id="archive-confirm-title">Encerrar {archiveLabel}?</h3>
+            <p id="archive-confirm-copy">
+              O mapa ao vivo será limpo para o próximo sorteio. Reservas,
+              abdicações e auditoria ficam guardadas no histórico deste
+              empreendimento.
+            </p>
+            <ul>
+              <li>
+                <b>{liveReservationCount}</b> reservas
+              </li>
+              <li>
+                <b>{liveDeclineCount}</b> abdicações
+              </li>
+              {archiveNotes.trim() ? (
+                <li>
+                  Observação: <b>{archiveNotes.trim()}</b>
+                </li>
+              ) : null}
+            </ul>
+            <div className="modal-actions">
+              <button
+                type="button"
+                className="secondary-button"
+                disabled={archiveBusy}
+                onClick={() => setArchiveConfirmOpen(false)}
+              >
+                Cancelar
+              </button>
+              <button
+                type="button"
+                className="confirm-button"
+                disabled={archiveBusy}
+                onClick={() => void archiveSession()}
+              >
+                <Archive size={15} />
+                {archiveBusy ? 'Arquivando' : 'Arquivar e limpar'}
+              </button>
+            </div>
+          </section>
+        </div>
+      )}
     </div>
   )
 }
