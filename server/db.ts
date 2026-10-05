@@ -7,9 +7,19 @@ if (!process.env.DATABASE_URL) {
   throw new Error('DATABASE_URL não configurada.')
 }
 
+const databaseUrl = process.env.DATABASE_URL
+const needsSsl = /supabase\.co|pooler\.supabase\.com/i.test(databaseUrl)
+// O pooler do Supabase usa certificado intermediário; o SSL do pg
+// fica ligado sem validar a cadeia (sslmode=require na URL quebra isso).
+const connectionString = databaseUrl
+  .replace(/([?&])sslmode=[^&]*/g, '$1')
+  .replace(/[?&]$/, '')
+  .replace(/\?&/, '?')
+
 export const pool = new Pool({
-  connectionString: process.env.DATABASE_URL,
+  connectionString,
   max: 10,
+  ...(needsSsl ? { ssl: { rejectUnauthorized: false } } : {}),
 })
 
 export async function transaction<T>(
