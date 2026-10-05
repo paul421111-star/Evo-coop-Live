@@ -11,6 +11,7 @@ import {
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js'
 import type { OrbitControls as OrbitControlsImpl } from 'three-stdlib'
 import {
+  SELECTED_UNIT_COLOR,
   STATUS_BY_ID,
   apartmentFloorCenterY,
   buildingFloors,
@@ -189,20 +190,24 @@ function ApartmentVolumes({
         const isFilled = status !== 'none'
         const color = isFilled
           ? STATUS_BY_ID[status].color
-          : highlightAvailability
-            ? STATUS_BY_ID.available.color
-            : '#38bdf8'
+          : isSelected
+            ? SELECTED_UNIT_COLOR
+            : highlightAvailability
+              ? STATUS_BY_ID.available.color
+              : '#38bdf8'
         const opacity = isFilled
           ? highlightAvailability
-            ? 0.46
-            : 0.32
-          : highlightAvailability
-            ? isHovered || isSelected
-              ? 0.3
-              : 0.17
-            : isHovered || isSelected
-              ? 0.12
-              : 0.001
+            ? 0.5
+            : 0.38
+          : isSelected
+            ? 0.42
+            : highlightAvailability
+              ? isHovered
+                ? 0.3
+                : 0.17
+              : isHovered
+                ? 0.12
+                : 0.001
 
         // A caixa cresce só para fora da torre: a face interna continua no
         // lugar e a externa passa a aflorar pouco além da fachada.
@@ -253,17 +258,17 @@ function ApartmentVolumes({
             />
             {(isSelected || isHovered) && (
               <Edges
-                color={isSelected ? '#ffffff' : '#7dd3fc'}
+                color={isSelected ? SELECTED_UNIT_COLOR : '#7dd3fc'}
                 linewidth={isSelected ? 2 : 1}
               />
             )}
             {isSelected && (
               <Edges
-                color="#ffffff"
+                color={SELECTED_UNIT_COLOR}
                 linewidth={1}
                 depthTest={false}
                 transparent
-                opacity={0.3}
+                opacity={0.55}
                 renderOrder={30}
               />
             )}

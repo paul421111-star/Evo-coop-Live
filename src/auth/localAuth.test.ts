@@ -46,7 +46,11 @@ describe('autenticação pela API', () => {
   })
 
   it('cadastra um operador com conta individual', async () => {
-    const operator = { id: '2', username: 'Maria', role: 'operator' as const }
+    const operator = {
+      id: '2',
+      username: 'Maria',
+      role: 'operator_sede' as const,
+    }
     vi.stubGlobal(
       'fetch',
       vi.fn().mockResolvedValue(new Response(JSON.stringify(operator))),

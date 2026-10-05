@@ -1,5 +1,6 @@
 import type { CSSProperties } from 'react'
 import {
+  SELECTED_UNIT_COLOR,
   STATUS_BY_ID,
   apartmentId,
   apartmentStorageId,
@@ -96,7 +97,14 @@ export function ApartmentGrid({
               const assignment =
                 assignments[apartmentStorageId(config.kind, id)]
               const hidden = statusFilter !== 'all' && status !== statusFilter
-              const statusData = STATUS_BY_ID[status]
+              const statusData =
+                selectedId === id && status === 'none'
+                  ? {
+                      ...STATUS_BY_ID.none,
+                      label: 'Selecionado',
+                      color: SELECTED_UNIT_COLOR,
+                    }
+                  : STATUS_BY_ID[status]
               return (
                 <button
                   key={id}

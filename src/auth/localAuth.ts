@@ -1,4 +1,4 @@
-export type UserRole = 'admin' | 'operator'
+export type UserRole = 'admin' | 'operator_sede' | 'operator_obra'
 
 export type AppUser = {
   id: string
@@ -49,10 +49,14 @@ export async function listUsers() {
   return apiRequest<AppUser[]>('/api/users')
 }
 
-export async function createOperator(username: string, password: string) {
+export async function createOperator(
+  username: string,
+  password: string,
+  role: Exclude<UserRole, 'admin'> = 'operator_sede',
+) {
   return apiRequest<AppUser>('/api/users', {
     method: 'POST',
-    body: JSON.stringify({ username, password }),
+    body: JSON.stringify({ username, password, role }),
   })
 }
 

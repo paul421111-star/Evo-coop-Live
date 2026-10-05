@@ -15,10 +15,12 @@ import {
   type DrawGroup,
 } from '../config/drawGroups'
 import type { BuildingKind } from '../config/building'
+import type { AnticipationSession } from '../config/anticipation'
 
 type Props = {
   building: BuildingKind
   activeGroup?: DrawGroup
+  anticipationSession?: AnticipationSession | null
   items: DrawDecline[]
   busy: boolean
   error: string
@@ -28,6 +30,8 @@ type Props = {
     source: DrawDeclineSource
     reason: DrawDeclineReason
     notes: string
+    anticipationSessionId?: string
+    anticipationEntryId?: string
   }) => Promise<boolean>
   onRemove: (id: string) => Promise<void>
 }
@@ -35,6 +39,7 @@ type Props = {
 export function DeclinedDrawsPanel({
   building,
   activeGroup,
+  anticipationSession,
   items,
   busy,
   error,
@@ -48,6 +53,20 @@ export function DeclinedDrawsPanel({
   const [notes, setNotes] = useState('')
   const [search, setSearch] = useState('')
   const [expanded, setExpanded] = useState(false)
+  const activeSession =
+    anticipationSession?.status === 'active' ? anticipationSession : null
+  const lockedAnticipator =
+    activeSession?.nextSource === 'anticipator'
+      ? activeSession.nextAnticipator
+      : null
+  const effectiveSource = activeSession?.nextSource ?? source
+  const effectiveBall = lockedAnticipator
+    ? activeGroup
+      ? lockedAnticipator.associateCode.slice(-4)
+      : lockedAnticipator.associateCode
+    : ball
+  const effectiveParticipant =
+    lockedAnticipator?.participant ?? participant
 
   const visibleItems = useMemo(() => {
     const query = search.trim().toLocaleLowerCase('pt-BR')
@@ -64,14 +83,16 @@ export function DeclinedDrawsPanel({
 
   const submit = async () => {
     const associateCode = activeGroup
-      ? buildAssociateCode(activeGroup, ball)
-      : ball.trim()
+      ? buildAssociateCode(activeGroup, effectiveBall)
+      : effectiveBall.trim()
     const saved = await onAdd({
       ball: associateCode ?? '',
-      participant: participant.trim(),
-      source,
+      participant: effectiveParticipant.trim(),
+      source: effectiveSource,
       reason,
       notes: notes.trim(),
+      anticipationSessionId: activeSession?.id,
+      anticipationEntryId: lockedAnticipator?.id,
     })
     if (!saved) return
     setBall('')
@@ -109,13 +130,14 @@ export function DeclinedDrawsPanel({
         <>
       <div className="abdication-form">
         <label>
-          <span>{activeGroup ? 'Bolinha sorteada *' : 'Código associado *'}</span>
+          <span>{lockedAnticipator ? 'Contrato do antecipador *' : activeGroup ? 'Bolinha sorteada *' : 'Código associado *'}</span>
           <div className={activeGroup ? 'associate-code-input' : undefined}>
             {activeGroup && <b>{activeGroup}</b>}
             <input
-              value={ball}
+              value={effectiveBall}
               inputMode={activeGroup ? 'numeric' : undefined}
               maxLength={activeGroup ? 4 : undefined}
+              readOnly={Boolean(lockedAnticipator)}
               onChange={(event) =>
                 setBall(
                   activeGroup
@@ -139,7 +161,8 @@ export function DeclinedDrawsPanel({
         <label>
           <span>Nome</span>
           <input
-            value={participant}
+            value={effectiveParticipant}
+            readOnly={Boolean(lockedAnticipator)}
             onChange={(event) => setParticipant(event.target.value)}
             placeholder="Opcional"
           />
@@ -147,7 +170,8 @@ export function DeclinedDrawsPanel({
         <label>
           <span>Origem *</span>
           <select
-            value={source}
+            value={effectiveSource}
+            disabled={Boolean(activeSession)}
             onChange={(event) =>
               setSource(event.target.value as DrawDeclineSource)
             }

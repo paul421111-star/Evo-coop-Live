@@ -5,6 +5,7 @@ import {
   listUsers,
   removeOperator,
   type AppUser,
+  type UserRole,
 } from '../auth/localAuth'
 import { api } from '../api/client'
 import {
@@ -45,7 +46,7 @@ type Props = {
     building: BuildingKind,
     ending: Ending,
     items: SurroundingItem[],
-  ) => void
+  ) => Promise<void>
   onSaveSolar: (
     building: BuildingKind,
     ending: Ending,
@@ -81,8 +82,16 @@ export function AdminPanel({
   const [users, setUsers] = useState<AppUser[]>([])
   const [username, setUsername] = useState('')
   const [password, setPassword] = useState('')
+  const [operatorRole, setOperatorRole] =
+    useState<Exclude<UserRole, 'admin'>>('operator_sede')
   const [userError, setUserError] = useState('')
   const [building, setBuilding] = useState<BuildingKind>('odd')
+  const [itemDrafts, setItemDrafts] = useState<SurroundingsConfig>(() =>
+    structuredClone(surroundings),
+  )
+  const [itemStatus, setItemStatus] = useState<
+    Partial<Record<string, 'saving' | 'saved' | 'error'>>
+  >({})
   const [solarDrafts, setSolarDrafts] = useState<SolarIllustrationsConfig>(
     () => structuredClone(solarIllustrations),
   )
@@ -127,7 +136,7 @@ export function AdminPanel({
 
   const addUser = async () => {
     try {
-      const operator = await createOperator(username, password)
+      const operator = await createOperator(username, password, operatorRole)
       setUsers((current) => [...current, operator])
       setUsername('')
       setPassword('')
@@ -145,37 +154,60 @@ export function AdminPanel({
     setUsers((current) => current.filter(({ id }) => id !== user.id))
   }
 
+  const draftItems = (ending: Ending) => itemDrafts[building]?.[ending] ?? []
+
+  const setDraftItems = (ending: Ending, items: SurroundingItem[]) => {
+    setItemDrafts((state) => ({
+      ...state,
+      [building]: { ...state[building], [ending]: items },
+    }))
+    setItemStatus((current) => {
+      const next = { ...current }
+      delete next[`${building}:${ending}`]
+      return next
+    })
+  }
+
   const updateItem = (
     ending: Ending,
     id: string,
     patch: Partial<SurroundingItem>,
   ) => {
-    const items = surroundings[building][ending] ?? []
-    onUpdate(
-      building,
+    setDraftItems(
       ending,
-      items.map((item) => (item.id === id ? { ...item, ...patch } : item)),
+      draftItems(ending).map((item) =>
+        item.id === id ? { ...item, ...patch } : item,
+      ),
     )
   }
 
   const removeItem = (ending: Ending, id: string) => {
-    onUpdate(
-      building,
+    setDraftItems(
       ending,
-      (surroundings[building][ending] ?? []).filter((item) => item.id !== id),
+      draftItems(ending).filter((item) => item.id !== id),
     )
   }
 
   const addItem = (ending: Ending) => {
-    const items = surroundings[building][ending] ?? []
-    onUpdate(building, ending, [
-      ...items,
+    setDraftItems(ending, [
+      ...draftItems(ending),
       {
         id: createLocalId(),
         label: 'Nova indicação',
         icon: 'tree',
       },
     ])
+  }
+
+  const saveItems = async (ending: Ending) => {
+    const key = `${building}:${ending}`
+    setItemStatus((current) => ({ ...current, [key]: 'saving' }))
+    try {
+      await onUpdate(building, ending, draftItems(ending))
+      setItemStatus((current) => ({ ...current, [key]: 'saved' }))
+    } catch {
+      setItemStatus((current) => ({ ...current, [key]: 'error' }))
+    }
   }
 
   const toggleSolarDraft = (ending: Ending, illustration: SolarIllustration) => {
@@ -346,6 +378,22 @@ export function AdminPanel({
               onChange={(event) => setPassword(event.target.value)}
               placeholder="Senha inicial"
             />
+            <select
+              value={operatorRole}
+              onChange={(event) =>
+                setOperatorRole(
+                  event.target.value as Exclude<UserRole, 'admin'>,
+                )
+              }
+              aria-label="Tipo de operador"
+            >
+              <option value="operator_sede">
+                Operador Sede · mapa e antecipação
+              </option>
+              <option value="operator_obra">
+                Operador Obra · somente mapa
+              </option>
+            </select>
             <button type="button" onClick={() => void addUser()}>
               <UserPlus size={15} /> Cadastrar
             </button>
@@ -360,7 +408,11 @@ export function AdminPanel({
                 <span>
                   <b>{user.username}</b>
                   <small>
-                    {user.role === 'admin' ? 'Administrador' : 'Operador'}
+                    {user.role === 'admin'
+                      ? 'Administrador'
+                      : user.role === 'operator_sede'
+                        ? 'Operador Sede · mapa e antecipação'
+                        : 'Operador Obra · somente mapa'}
                   </small>
                 </span>
                 {user.role !== 'admin' && (
@@ -589,7 +641,7 @@ export function AdminPanel({
                     <small>Não foi possível salvar.</small>
                   )}
                 </div>
-                {(surroundings[building][ending] ?? []).map((item) => (
+                {draftItems(ending).map((item) => (
                   <div className="indication-edit-row" key={item.id}>
                     <SurroundingIcon icon={item.icon} size={16} />
                     <input
@@ -625,6 +677,23 @@ export function AdminPanel({
                     </button>
                   </div>
                 ))}
+                <div className="solar-config-row indication-save-row">
+                  <button
+                    type="button"
+                    onClick={() => void saveItems(ending)}
+                    disabled={itemStatus[`${building}:${ending}`] === 'saving'}
+                  >
+                    <Save size={13} />
+                    {itemStatus[`${building}:${ending}`] === 'saving'
+                      ? 'Salvando'
+                      : itemStatus[`${building}:${ending}`] === 'saved'
+                        ? 'Salvo'
+                        : 'Salvar indicações'}
+                  </button>
+                  {itemStatus[`${building}:${ending}`] === 'error' && (
+                    <small>Não foi possível salvar.</small>
+                  )}
+                </div>
               </article>
             ))}
           </div>

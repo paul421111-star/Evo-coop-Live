@@ -1,12 +1,21 @@
 import type { BuildingKind } from './building'
 
-export type DrawGroup = '12' | '13' | '14' | '15' | '16' | '17' | '18'
+export type DrawGroup =
+  | '11'
+  | '12'
+  | '13'
+  | '14'
+  | '15'
+  | '16'
+  | '17'
+  | '18'
+  | '19'
 
 export const DRAW_GROUPS_BY_BUILDING: Record<BuildingKind, DrawGroup[]> = {
   odd: ['13', '15', '17'],
   even: ['12', '14', '16', '18'],
-  'jardim-artes': [],
-  'cond-iracema': [],
+  'jardim-artes': ['11'],
+  'cond-iracema': ['19'],
 }
 
 export function drawGroupsForBuilding(building: BuildingKind): DrawGroup[] {

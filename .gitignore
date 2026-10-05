@@ -1,3 +1,6 @@
+# Sessões do WhatsApp da cobrança (credenciais do celular)
+data/whatsapp/
+
 # Logs
 logs
 *.log

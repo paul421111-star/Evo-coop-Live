@@ -64,10 +64,12 @@ export const STATUS_OPTIONS: ReadonlyArray<{
   { id: 'none', label: 'Sem marcação', shortLabel: 'Livre', color: '#64748b' },
   { id: 'available', label: 'Disponível', shortLabel: 'Disp.', color: '#22c55e' },
   { id: 'interest', label: 'Em interesse', shortLabel: 'Interesse', color: '#38bdf8' },
-  { id: 'reserved', label: 'Reservado', shortLabel: 'Reserva', color: '#f59e0b' },
+  { id: 'reserved', label: 'Reservado', shortLabel: 'Reserva', color: '#ef4444' },
   { id: 'sold', label: 'Vendido', shortLabel: 'Vendido', color: '#f43f5e' },
   { id: 'blocked', label: 'Bloqueado', shortLabel: 'Bloq.', color: '#a78bfa' },
 ]
+
+export const SELECTED_UNIT_COLOR = '#f59e0b'
 
 export const STATUS_BY_ID = Object.fromEntries(
   STATUS_OPTIONS.map((status) => [status.id, status]),

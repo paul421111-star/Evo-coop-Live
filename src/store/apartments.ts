@@ -20,11 +20,14 @@ import {
   type SurroundingsConfig,
 } from '../config/surroundings'
 import { createLocalId } from '../utils/localCrypto'
+import type { ChoiceSource } from '../config/anticipation'
 
 export type ApartmentStatuses = Record<string, ApartmentStatus>
 export type ApartmentAssignment = {
   ball: string
   participant: string
+  choiceSource?: ChoiceSource
+  anticipationEntryId?: string
   assignedAt: string
   createdBy?: string
   updatedAt?: string
@@ -149,6 +152,12 @@ export function normalizeAssignments(value: unknown): ApartmentAssignments | nul
     normalized[normalizedId] = {
       ball: candidate.ball,
       participant: candidate.participant,
+      choiceSource:
+        candidate.choiceSource === 'anticipator' ? 'anticipator' : 'draw',
+      anticipationEntryId:
+        typeof candidate.anticipationEntryId === 'string'
+          ? candidate.anticipationEntryId
+          : undefined,
       assignedAt: candidate.assignedAt,
       createdBy:
         typeof candidate.createdBy === 'string'

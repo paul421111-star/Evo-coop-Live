@@ -1,6 +1,7 @@
 import { useState, type FormEvent } from 'react'
 import { Eye, EyeOff, LockKeyhole, UserRound } from 'lucide-react'
 import { authenticate, type AppUser } from '../auth/localAuth'
+import { SiteFooter } from './SiteFooter'
 
 type Props = {
   onLogin: (user: AppUser) => void
@@ -82,8 +83,12 @@ export function LoginScreen({ onLogin }: Props) {
             {loading ? 'Entrando…' : 'Entrar'}
           </button>
         </form>
+        <a className="associate-login-link" href="/associado">
+          Sou associado e quero ver o ranking
+        </a>
         <small>As ações ficam vinculadas ao usuário conectado.</small>
       </section>
+      <SiteFooter tone="dark" floating />
     </main>
   )
 }

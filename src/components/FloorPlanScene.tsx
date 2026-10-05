@@ -2,6 +2,7 @@ import { Suspense, useMemo, useState } from 'react'
 import { Canvas, type ThreeEvent } from '@react-three/fiber'
 import { Edges, Html, OrbitControls, useGLTF } from '@react-three/drei'
 import {
+  SELECTED_UNIT_COLOR,
   STATUS_BY_ID,
   apartmentId,
   type ApartmentStatus,
@@ -81,9 +82,11 @@ function FloorUnits({
         const color =
           status !== 'none'
             ? STATUS_BY_ID[status].color
-            : highlightAvailability
-              ? STATUS_BY_ID.available.color
-              : '#38bdf8'
+            : selected
+              ? SELECTED_UNIT_COLOR
+              : highlightAvailability
+                ? STATUS_BY_ID.available.color
+                : '#38bdf8'
 
         return (
           <group key={id}>
@@ -115,20 +118,25 @@ function FloorUnits({
                 transparent
                 opacity={
                   status !== 'none'
-                    ? 0.38
-                    : highlightAvailability
-                      ? selected || hovered
-                        ? 0.34
-                        : 0.22
-                      : selected || hovered
-                        ? 0.2
-                        : 0.025
+                    ? 0.48
+                    : selected
+                      ? 0.46
+                      : highlightAvailability
+                        ? hovered
+                          ? 0.34
+                          : 0.22
+                        : hovered
+                          ? 0.2
+                          : 0.025
                 }
                 depthWrite={false}
                 toneMapped={false}
               />
               {(selected || hovered) && (
-                <Edges color={selected ? '#ffffff' : '#7dd3fc'} linewidth={2} />
+                <Edges
+                  color={selected ? SELECTED_UNIT_COLOR : '#7dd3fc'}
+                  linewidth={2}
+                />
               )}
             </mesh>
             <Html
@@ -141,7 +149,11 @@ function FloorUnits({
                 style={{ '--unit-color': color } as React.CSSProperties}
               >
                 <strong>{id}</strong>
-                <span>{STATUS_BY_ID[status].shortLabel}</span>
+                <span>
+                  {selected && status === 'none'
+                    ? 'Selecionado'
+                    : STATUS_BY_ID[status].shortLabel}
+                </span>
               </div>
             </Html>
           </group>
