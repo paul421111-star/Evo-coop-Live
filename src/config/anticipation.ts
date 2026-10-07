@@ -35,9 +35,15 @@ export type AnticipationSession = {
   endsAt: string
   status: AnticipationSessionStatus
   nextSource: ChoiceSource
+  /** Reserva feita, mas a plaquinha só muda no botão Próximo. */
+  awaitingNext: boolean
   liveUrl: string
   /** Quantas posições do topo entram como antecipadoras. */
   anticipatorSlots: number
+  /** Escolhas e abdições de antecipador já consumidas nesta sessão. */
+  anticipatorTurnsUsed: number
+  /** Limite para confirmar a antecipação. Depois disso vira "não antecipar". */
+  confirmationDeadline: string | null
   portalPath: string
   entries: AnticipationEntry[]
   nextAnticipator: AnticipationEntry | null
@@ -105,11 +111,31 @@ export function oppositeChoiceSource(source: ChoiceSource): ChoiceSource {
   return source === 'anticipator' ? 'draw' : 'anticipator'
 }
 
+/**
+ * Depois das vagas de antecipador, a vez fica só no sorteio.
+ * Abdicação conta na vaga, mas não troca a plaquinha antes disso.
+ */
+export function choiceSourceAfterTurn(
+  current: ChoiceSource,
+  consumedAnticipators: number,
+  slots: number,
+  abdication = false,
+): ChoiceSource {
+  if (consumedAnticipators >= slots) return 'draw'
+  if (abdication) return current
+  return oppositeChoiceSource(current)
+}
+
 export const OFFER_DECISION_MS = 24 * 60 * 60 * 1000
 
 export function offerDecisionUntil(
   selectedAt: string | null | undefined,
+  confirmationDeadline?: string | null,
 ): string | null {
+  if (confirmationDeadline) {
+    const until = new Date(confirmationDeadline).getTime()
+    return Number.isNaN(until) ? null : new Date(until).toISOString()
+  }
   if (!selectedAt) return null
   const start = new Date(selectedAt).getTime()
   if (Number.isNaN(start)) return null
@@ -119,8 +145,9 @@ export function offerDecisionUntil(
 export function isOfferDecisionOpen(
   selectedAt: string | null | undefined,
   now = Date.now(),
+  confirmationDeadline?: string | null,
 ): boolean {
-  const until = offerDecisionUntil(selectedAt)
+  const until = offerDecisionUntil(selectedAt, confirmationDeadline)
   return Boolean(until && now < new Date(until).getTime())
 }
 
@@ -164,6 +191,7 @@ export type AssociatePortalView = {
   liveUrl: string
   nextSource: ChoiceSource
   anticipatorSlots: number
+  confirmationDeadline: string | null
   ranking: AssociatePortalRankingRow[]
   you: (AssociatePortalRankingRow & {
     canSetOffer: boolean

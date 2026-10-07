@@ -195,19 +195,22 @@ function ApartmentVolumes({
             : highlightAvailability
               ? STATUS_BY_ID.available.color
               : '#38bdf8'
-        const opacity = isFilled
-          ? highlightAvailability
-            ? 0.5
-            : 0.38
-          : isSelected
-            ? 0.42
-            : highlightAvailability
-              ? isHovered
-                ? 0.3
-                : 0.17
-              : isHovered
-                ? 0.12
-                : 0.001
+        const opacity =
+          status === 'reserved'
+            ? 0.16
+            : isFilled
+              ? highlightAvailability
+                ? 0.5
+                : 0.38
+              : isSelected
+                ? 0.42
+                : highlightAvailability
+                  ? isHovered
+                    ? 0.3
+                    : 0.17
+                  : isHovered
+                    ? 0.12
+                    : 0.001
 
         // A caixa cresce só para fora da torre: a face interna continua no
         // lugar e a externa passa a aflorar pouco além da fachada.
@@ -453,40 +456,42 @@ export function BuildingScene(props: Props) {
         shadow-camera-bottom={-20}
       />
 
-      <Suspense fallback={<LoadingModel />}>
-        <BuildingModel config={props.config} />
-        <SelectedApartmentLabel
+      <group rotation={[0, props.config.mapRotationY ?? 0, 0]}>
+        <Suspense fallback={<LoadingModel />}>
+          <BuildingModel config={props.config} />
+          <SelectedApartmentLabel
+            config={props.config}
+            statuses={props.statuses}
+            selectedId={props.selectedId}
+          />
+        </Suspense>
+        <ApartmentVolumes
           config={props.config}
           statuses={props.statuses}
           selectedId={props.selectedId}
+          highlightAvailability={props.highlightAvailability}
+          onSelect={props.onSelect}
+          onActivate={props.onActivate}
         />
-      </Suspense>
-      <ApartmentVolumes
-        config={props.config}
-        statuses={props.statuses}
-        selectedId={props.selectedId}
-        highlightAvailability={props.highlightAvailability}
-        onSelect={props.onSelect}
-        onActivate={props.onActivate}
-      />
+        {selectedApartment && (
+          <mesh position={[0, selectedFloorY + 0.03, 0]} renderOrder={15}>
+            <boxGeometry args={[38, 0.12, 28]} />
+            <meshBasicMaterial
+              color="#38bdf8"
+              transparent
+              opacity={0.22}
+              depthWrite={false}
+              toneMapped={false}
+            />
+            <Edges color="#7dd3fc" />
+          </mesh>
+        )}
+      </group>
       {props.showFloorScale && (
         <FloorScale
           config={props.config}
           selectedFloor={selectedApartment?.floor ?? null}
         />
-      )}
-      {selectedApartment && (
-        <mesh position={[0, selectedFloorY + 0.03, 0]} renderOrder={15}>
-          <boxGeometry args={[38, 0.12, 28]} />
-          <meshBasicMaterial
-            color="#38bdf8"
-            transparent
-            opacity={0.22}
-            depthWrite={false}
-            toneMapped={false}
-          />
-          <Edges color="#7dd3fc" />
-        </mesh>
       )}
 
       <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, -0.38, 0]} receiveShadow>

@@ -51,6 +51,8 @@ export type BuildingConfig = {
   floorPlanY?: number
   optimizeExteriorOnly?: boolean
   hasEnvironmentLabels?: boolean
+  /** Giro da maquete no mapa, em radianos. O grupo par nasce 180° invertido. */
+  mapRotationY?: number
   unitPositions: Record<number, UnitPosition>
   planCore?: PlanCore
 }
@@ -64,7 +66,7 @@ export const STATUS_OPTIONS: ReadonlyArray<{
   { id: 'none', label: 'Sem marcação', shortLabel: 'Livre', color: '#64748b' },
   { id: 'available', label: 'Disponível', shortLabel: 'Disp.', color: '#22c55e' },
   { id: 'interest', label: 'Em interesse', shortLabel: 'Interesse', color: '#38bdf8' },
-  { id: 'reserved', label: 'Reservado', shortLabel: 'Reserva', color: '#ef4444' },
+  { id: 'reserved', label: 'Reservado', shortLabel: 'Reserva', color: '#c5ced6' },
   { id: 'sold', label: 'Vendido', shortLabel: 'Vendido', color: '#f43f5e' },
   { id: 'blocked', label: 'Bloqueado', shortLabel: 'Bloq.', color: '#a78bfa' },
 ]
@@ -77,6 +79,21 @@ export const STATUS_BY_ID = Object.fromEntries(
 
 export function apartmentId(floor: number, ending: Ending): string {
   return `${floor}${ending}`
+}
+
+/** Fachada que a câmera deve mostrar ao escolher um final. */
+export type FacadeView = 'front' | 'back' | 'east' | 'west'
+
+export function viewForEnding(
+  config: BuildingConfig,
+  ending: number,
+): FacadeView {
+  const label = config.unitPositions[ending]?.label.toLocaleLowerCase('pt-BR') ?? ''
+  if (label.startsWith('leste')) return 'east'
+  if (label.startsWith('oeste')) return 'west'
+  if (label.startsWith('fundos')) return 'back'
+  if (label.startsWith('frente')) return 'front'
+  return 'front'
 }
 
 export function modelApartmentId(floor: number, ending: Ending): string {
@@ -155,14 +172,14 @@ const ODD_UNIT_POSITIONS: Record<number, UnitPosition> = {
 }
 
 const EVEN_UNIT_POSITIONS: Record<number, UnitPosition> = {
-  1: { label: 'Leste fundos', shortLabel: 'LF', x: 10.92, z: -3.78, width: 14.7, depth: 7.8 },
-  2: { label: 'Leste frente', shortLabel: 'LE', x: 10.92, z: 3.78, width: 14.7, depth: 7.8 },
-  3: { label: 'Frente direita', shortLabel: 'FD', x: 3.78, z: 10.92, width: 7.8, depth: 14.7 },
-  4: { label: 'Frente esquerda', shortLabel: 'FE', x: -3.78, z: 10.92, width: 7.8, depth: 14.7 },
-  5: { label: 'Oeste frente', shortLabel: 'OF', x: -10.92, z: 3.78, width: 14.7, depth: 7.8 },
-  6: { label: 'Oeste fundos', shortLabel: 'OT', x: -10.92, z: -3.78, width: 14.7, depth: 7.8 },
-  7: { label: 'Fundos esquerda', shortLabel: 'TE', x: -3.78, z: -10.92, width: 7.8, depth: 14.7 },
-  8: { label: 'Fundos direita', shortLabel: 'TD', x: 3.78, z: -10.92, width: 7.8, depth: 14.7 },
+  1: { label: 'Oeste frente', shortLabel: 'OF', x: 10.92, z: -3.78, width: 14.7, depth: 7.8 },
+  2: { label: 'Oeste fundos', shortLabel: 'OT', x: 10.92, z: 3.78, width: 14.7, depth: 7.8 },
+  3: { label: 'Fundos esquerda', shortLabel: 'TE', x: 3.78, z: 10.92, width: 7.8, depth: 14.7 },
+  4: { label: 'Fundos direita', shortLabel: 'TD', x: -3.78, z: 10.92, width: 7.8, depth: 14.7 },
+  5: { label: 'Leste fundos', shortLabel: 'LF', x: -10.92, z: 3.78, width: 14.7, depth: 7.8 },
+  6: { label: 'Leste frente', shortLabel: 'LE', x: -10.92, z: -3.78, width: 14.7, depth: 7.8 },
+  7: { label: 'Frente direita', shortLabel: 'FD', x: -3.78, z: -10.92, width: 7.8, depth: 14.7 },
+  8: { label: 'Frente esquerda', shortLabel: 'FE', x: 3.78, z: -10.92, width: 7.8, depth: 14.7 },
 }
 
 const JARDIM_ARTES_UNIT_POSITIONS: Record<number, UnitPosition> = {
@@ -244,6 +261,7 @@ export const BUILDING_CONFIGS: Record<BuildingKind, BuildingConfig> = {
     floorPlanY: 3.02,
     optimizeExteriorOnly: true,
     hasEnvironmentLabels: true,
+    mapRotationY: Math.PI,
     unitPositions: EVEN_UNIT_POSITIONS,
     planCore: { width: 7.2, depth: 7.2 },
   }),

@@ -43,6 +43,9 @@ type Props = {
   onStatus: (status: AnticipationSession['status']) => Promise<void>
   onSaveLiveUrl: (liveUrl: string) => Promise<void>
   onSaveSlots: (anticipatorSlots: number) => Promise<void>
+  onSaveConfirmationDeadline: (
+    confirmationDeadline: string | null,
+  ) => Promise<void>
   onOpenMap: () => void
 }
 
@@ -85,6 +88,7 @@ export function RankingBoard({
   onStatus,
   onSaveLiveUrl,
   onSaveSlots,
+  onSaveConfirmationDeadline,
   onOpenMap,
 }: Props) {
   const [title, setTitle] = useState('')
@@ -281,7 +285,9 @@ export function RankingBoard({
               </h2>
               <p className="board-hint">
                 As chamadas alternam entre antecipador e sorteio, começando
-                pelo antecipador.{' '}
+                pelo antecipador. Cada abdicação conta entre os{' '}
+                {session?.anticipatorSlots ?? 112} antecipadores. Depois disso,
+                a vez fica somente no sorteio.{' '}
                 {orderLocked
                   ? 'Com o ranking travado, cada chamada de antecipador já mostra o contrato correspondente.'
                   : 'Trave as antecipações para que os contratos apareçam em cada chamada.'}
@@ -527,6 +533,56 @@ export function RankingBoard({
                 )}
               </div>
             )}
+
+            {admin && session.status === 'draft' && (
+              <label className="board-deadline">
+                <span>
+                  <CalendarClock size={14} /> Prazo para confirmar
+                </span>
+                <input
+                  type="datetime-local"
+                  key={session.confirmationDeadline ?? 'empty'}
+                  defaultValue={
+                    session.confirmationDeadline
+                      ? localDateTime(new Date(session.confirmationDeadline))
+                      : ''
+                  }
+                  disabled={busy}
+                  onBlur={(event) => {
+                    const value = event.target.value
+                    const next = value ? new Date(value).toISOString() : null
+                    const current = session.confirmationDeadline
+                    if (next === current) return
+                    if (
+                      next &&
+                      current &&
+                      new Date(next).getTime() === new Date(current).getTime()
+                    ) {
+                      return
+                    }
+                    void onSaveConfirmationDeadline(next)
+                  }}
+                />
+                <small>
+                  Depois deste horário, quem não clicou em &quot;Manter
+                  antecipação&quot; passa automaticamente para &quot;Não
+                  antecipar&quot;.
+                  {session.confirmationDeadline
+                    ? ` Agora: ${formatDate(session.confirmationDeadline)}.`
+                    : ' Sem prazo definido, vale 24 horas após o associado informar as parcelas.'}
+                </small>
+                {session.confirmationDeadline && (
+                  <button
+                    type="button"
+                    className="ghost-button"
+                    disabled={busy}
+                    onClick={() => void onSaveConfirmationDeadline(null)}
+                  >
+                    Remover prazo
+                  </button>
+                )}
+              </label>
+            )}
           </section>
 
           {session.status === 'active' && (
@@ -554,11 +610,9 @@ export function RankingBoard({
                 </div>
               )}
               <small className="board-turn-rule">
-                Reservar uma unidade alterna para{' '}
-                {session.nextSource === 'anticipator'
-                  ? 'Sorteio'
-                  : 'Antecipador'}
-                . Registrar abdicação mantém esta mesma vez.
+                {session.anticipatorTurnsUsed >= session.anticipatorSlots
+                  ? `As ${session.anticipatorSlots} chamadas de antecipador já foram feitas, contando abdições. A vez fica só no sorteio.`
+                  : `Reservar uma unidade alterna a vez. Abdicação mantém a vez e conta nas ${session.anticipatorSlots} chamadas (${session.anticipatorTurnsUsed} já feitas).`}
               </small>
             </section>
           )}

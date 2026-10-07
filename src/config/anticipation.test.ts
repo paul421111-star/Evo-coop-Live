@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 import {
   isOfferDecisionOpen,
   offerDecisionUntil,
+  choiceSourceAfterTurn,
   oppositeChoiceSource,
   rankAnticipators,
 } from './anticipation'
@@ -56,6 +57,16 @@ describe('ranking dos antecipadores', () => {
     expect(oppositeChoiceSource('draw')).toBe('anticipator')
   })
 
+  it('depois das vagas, contando abdicação, fica só no sorteio', () => {
+    expect(choiceSourceAfterTurn('anticipator', 111, 112)).toBe('draw')
+    expect(choiceSourceAfterTurn('draw', 111, 112)).toBe('anticipator')
+    expect(choiceSourceAfterTurn('draw', 112, 112)).toBe('draw')
+    expect(choiceSourceAfterTurn('anticipator', 112, 112, true)).toBe('draw')
+    expect(choiceSourceAfterTurn('anticipator', 40, 112, true)).toBe(
+      'anticipator',
+    )
+  })
+
   it('recua no ranking ao recusar as parcelas antecipadas', () => {
     const ranked = rankAnticipators([
       {
@@ -84,6 +95,26 @@ describe('ranking dos antecipadores', () => {
     ).toBe(true)
     expect(
       isOfferDecisionOpen(selectedAt, Date.parse('2026-09-26T12:00:01.000Z')),
+    ).toBe(false)
+  })
+
+  it('usa o prazo definido pelo admin quando existir', () => {
+    const selectedAt = '2026-09-25T12:00:00.000Z'
+    const deadline = '2026-10-06T20:19:00.000Z'
+    expect(offerDecisionUntil(selectedAt, deadline)).toBe(deadline)
+    expect(
+      isOfferDecisionOpen(
+        selectedAt,
+        Date.parse('2026-10-06T20:18:00.000Z'),
+        deadline,
+      ),
+    ).toBe(true)
+    expect(
+      isOfferDecisionOpen(
+        selectedAt,
+        Date.parse('2026-10-06T20:19:01.000Z'),
+        deadline,
+      ),
     ).toBe(false)
   })
 })

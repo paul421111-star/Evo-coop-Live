@@ -1,4 +1,5 @@
 import type { CSSProperties } from 'react'
+import { KeyRound } from 'lucide-react'
 import {
   SELECTED_UNIT_COLOR,
   STATUS_BY_ID,
@@ -110,8 +111,8 @@ export function ApartmentGrid({
                   key={id}
                   type="button"
                   className={`unit-cell ${selectedId === id ? 'is-selected' : ''} ${
-                    hidden ? 'is-filtered' : ''
-                  }`}
+                    status === 'reserved' ? 'is-reserved' : ''
+                  } ${hidden ? 'is-filtered' : ''}`}
                   style={{ '--unit-color': statusData.color } as StatusStyle}
                   onClick={() => onSelect(id)}
                   onDoubleClick={() => onActivate(id)}
@@ -121,7 +122,11 @@ export function ApartmentGrid({
                   title={`Apto ${id} · ${statusData.label} · duplo clique para registrar`}
                 >
                   <span className="unit-cell-main">
-                    <span className="unit-dot" />
+                    {status === 'reserved' ? (
+                      <KeyRound size={11} className="unit-key" aria-hidden="true" />
+                    ) : (
+                      <span className="unit-dot" />
+                    )}
                     <b>{id}</b>
                   </span>
                   {assignment && (

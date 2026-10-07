@@ -15,6 +15,7 @@ import type { PoolClient } from 'pg'
 import { BUILDING_CONFIGS } from '../src/config/building'
 import { isDrawGroup, validateAssociateCode } from '../src/config/drawGroups'
 import {
+  choiceSourceAfterTurn,
   isOfferDecisionOpen,
   offerDecisionUntil,
 } from '../src/config/anticipation'
@@ -388,6 +389,7 @@ app.get(
       response.status(404).json({ error: 'Sessão não encontrada.' })
       return
     }
+    await expireUnconfirmedOffers()
     const session = await anticipationSessionData(pool, rows[0])
     const ranking = publicRankingEntries(session.entries)
     const current = session.entries.find((item) => item.id === identity.entryId)
@@ -398,24 +400,30 @@ app.get(
     if (current && yours) {
       const rankingOpen =
         session.status === 'draft' && current.status === 'waiting'
+      const deadline = session.confirmationDeadline
       const decisionOpen =
         rankingOpen &&
         current.offerStatus !== 'withdrawn' &&
-        isOfferDecisionOpen(current.offerSelectedAt)
+        isOfferDecisionOpen(current.offerSelectedAt, Date.now(), deadline)
       you = {
         ...yours,
         canSetOffer:
           rankingOpen &&
           current.offerStatus !== 'withdrawn' &&
           current.offerStatus !== 'confirmed' &&
-          (!current.offerSelectedAt ||
-            isOfferDecisionOpen(current.offerSelectedAt)),
+          (deadline
+            ? isOfferDecisionOpen(current.offerSelectedAt, Date.now(), deadline)
+            : !current.offerSelectedAt ||
+              isOfferDecisionOpen(current.offerSelectedAt)),
         canConfirm:
           decisionOpen &&
           current.offerStatus === 'pending' &&
           current.offeredInstallments > 0,
         canWithdraw: decisionOpen && current.offeredInstallments > 0,
-        offerDecisionUntil: offerDecisionUntil(current.offerSelectedAt),
+        offerDecisionUntil: offerDecisionUntil(
+          current.offerSelectedAt,
+          deadline,
+        ),
         whatsappPhone: current.whatsappPhone ?? '',
       }
     }
@@ -427,6 +435,7 @@ app.get(
       liveUrl: session.liveUrl,
       nextSource: session.nextSource,
       anticipatorSlots: session.anticipatorSlots,
+      confirmationDeadline: session.confirmationDeadline,
       ranking,
       you,
     })
@@ -449,8 +458,10 @@ app.post(
     let confirmedNow = false
     try {
       await transaction(async (client) => {
+        await expireUnconfirmedOffers(client)
         const { rows } = await client.query(
-          `SELECT e.*, s.status AS session_status
+          `SELECT e.*, s.status AS session_status,
+                  s.confirmation_deadline
              FROM anticipation_entries e
              JOIN anticipation_sessions s ON s.id = e.session_id
             WHERE e.id = $1 AND e.session_id = $2
@@ -490,6 +501,9 @@ app.post(
         const selectedAt = entry.offer_selected_at
           ? new Date(String(entry.offer_selected_at)).toISOString()
           : undefined
+        const deadline = entry.confirmation_deadline
+          ? new Date(String(entry.confirmation_deadline)).toISOString()
+          : null
         if (action === 'set') {
           if (entry.offer_status === 'confirmed') {
             throw new ApiError(
@@ -497,33 +511,25 @@ app.post(
               'A antecipação já foi confirmada e não pode ser alterada.',
             )
           }
-          if (selectedAt && !isOfferDecisionOpen(selectedAt)) {
+          if (
+            (selectedAt || deadline) &&
+            !isOfferDecisionOpen(selectedAt, Date.now(), deadline)
+          ) {
             throw new ApiError(
               409,
-              'O prazo de 1 dia para alterar a antecipação já encerrou.',
+              'O prazo para alterar a antecipação já encerrou.',
             )
           }
           const offeredInstallments = Number(request.body?.offeredInstallments)
           if (
             !Number.isInteger(offeredInstallments) ||
-            offeredInstallments < 0 ||
+            offeredInstallments < 10 ||
             offeredInstallments > 30
           ) {
             throw new ApiError(
               400,
-              'Informe de 0 a 30 parcelas para antecipar.',
+              'Informe de 10 a 30 parcelas para antecipar.',
             )
-          }
-          if (offeredInstallments === 0) {
-            await client.query(
-              `UPDATE anticipation_entries
-                  SET offered_installments = 0,
-                      offer_status = 'withdrawn',
-                      offer_selected_at = COALESCE(offer_selected_at, now())
-                WHERE id = $1`,
-              [entry.id],
-            )
-            return
           }
           await client.query(
             `UPDATE anticipation_entries
@@ -535,10 +541,10 @@ app.post(
           )
           return
         }
-        if (!isOfferDecisionOpen(selectedAt)) {
+        if (!isOfferDecisionOpen(selectedAt, Date.now(), deadline)) {
           throw new ApiError(
             409,
-            'O prazo de 1 dia para manter ou recusar já encerrou.',
+            'O prazo para manter ou recusar já encerrou.',
           )
         }
         if (Number(entry.offered_installments) === 0) {
@@ -705,6 +711,19 @@ function anticipationEntryData(row: Record<string, unknown>) {
   }
 }
 
+async function countConsumedAnticipators(
+  client: Pick<PoolClient, 'query'>,
+  sessionId: string,
+) {
+  const { rows } = await client.query(
+    `SELECT count(*)::int AS used
+       FROM anticipation_entries
+      WHERE session_id = $1 AND status IN ('selected', 'declined')`,
+    [sessionId],
+  )
+  return Number(rows[0]?.used ?? 0)
+}
+
 async function anticipationSessionData(
   client: Pick<PoolClient, 'query'>,
   row: Record<string, unknown>,
@@ -729,8 +748,15 @@ async function anticipationSessionData(
     endsAt: new Date(String(row.ends_at)).toISOString(),
     status: String(row.status),
     nextSource: String(row.next_source),
+    awaitingNext: Boolean(row.awaiting_next),
     liveUrl: String(row.live_url ?? ''),
     anticipatorSlots: Number(row.anticipator_slots ?? 112),
+    anticipatorTurnsUsed: entries.filter(
+      (entry) => entry.status === 'selected' || entry.status === 'declined',
+    ).length,
+    confirmationDeadline: row.confirmation_deadline
+      ? new Date(String(row.confirmation_deadline)).toISOString()
+      : null,
     portalPath: '/associado',
     entries,
     nextAnticipator:
@@ -749,6 +775,45 @@ function normalizeSlots(value: unknown) {
   const slots = Number(value)
   if (!Number.isInteger(slots) || slots < 0 || slots > 9999) return undefined
   return slots
+}
+
+/** Prazo do admin ou, sem ele, 24h após o associado informar as parcelas. */
+function normalizeConfirmationDeadline(value: unknown) {
+  if (value === undefined) return undefined
+  if (value === null || value === '') return null
+  const parsed = new Date(String(value))
+  if (Number.isNaN(parsed.getTime())) return undefined
+  return parsed.toISOString()
+}
+
+/**
+ * Quem não confirmou até o prazo passa automaticamente para "não antecipar".
+ */
+async function expireUnconfirmedOffers(
+  client: Pick<PoolClient, 'query'> = pool,
+) {
+  await client.query(
+    `UPDATE anticipation_entries e
+        SET offer_status = 'withdrawn',
+            offered_installments = 0
+       FROM anticipation_sessions s
+      WHERE e.session_id = s.id
+        AND s.status = 'draft'
+        AND e.status = 'waiting'
+        AND e.offer_status = 'pending'
+        AND e.offered_installments > 0
+        AND (
+          (
+            s.confirmation_deadline IS NOT NULL
+            AND s.confirmation_deadline <= now()
+          )
+          OR (
+            s.confirmation_deadline IS NULL
+            AND e.offer_selected_at IS NOT NULL
+            AND e.offer_selected_at <= now() - interval '24 hours'
+          )
+        )`,
+  )
 }
 
 function publicRankingEntries(
@@ -984,6 +1049,7 @@ app.get(
   const groupValue = String(req.query.group ?? '')
   const drawGroup =
     building && isDrawGroup(building, groupValue) ? groupValue : null
+  await expireUnconfirmedOffers()
   const { rows } = await pool.query(
     `SELECT s.*, u.username AS created_by_name
        FROM anticipation_sessions s
@@ -995,7 +1061,7 @@ app.get(
       LIMIT 1`,
     [building, drawGroup],
   )
-    res.json(rows[0] ? await anticipationSessionData(pool, rows[0]) : null)
+  res.json(rows[0] ? await anticipationSessionData(pool, rows[0]) : null)
   },
 )
 
@@ -1115,6 +1181,9 @@ app.patch('/api/anticipation-sessions/:id', requireAdmin, async (req, res) => {
       ? undefined
       : String(req.body.liveUrl).trim().slice(0, 400)
   const anticipatorSlots = normalizeSlots(req.body?.anticipatorSlots)
+  const confirmationDeadline = normalizeConfirmationDeadline(
+    req.body?.confirmationDeadline,
+  )
   if (status && !['draft', 'locked', 'active', 'closed'].includes(status)) {
     res.status(400).json({ error: 'Situação da sessão inválida.' })
     return
@@ -1123,7 +1192,19 @@ app.patch('/api/anticipation-sessions/:id', requireAdmin, async (req, res) => {
     res.status(400).json({ error: 'Informe um número válido de vagas.' })
     return
   }
-  if (!status && liveUrl === undefined && anticipatorSlots === undefined) {
+  if (
+    req.body?.confirmationDeadline !== undefined &&
+    confirmationDeadline === undefined
+  ) {
+    res.status(400).json({ error: 'Informe uma data e horário válidos.' })
+    return
+  }
+  if (
+    !status &&
+    liveUrl === undefined &&
+    anticipatorSlots === undefined &&
+    confirmationDeadline === undefined
+  ) {
     res.status(400).json({ error: 'Nenhuma alteração informada.' })
     return
   }
@@ -1220,6 +1301,10 @@ app.patch('/api/anticipation-sessions/:id', requireAdmin, async (req, res) => {
           SET status = COALESCE($2, status),
               live_url = COALESCE($3, live_url),
               anticipator_slots = COALESCE($4, anticipator_slots),
+              confirmation_deadline = CASE
+                WHEN $5::boolean THEN $6::timestamptz
+                ELSE confirmation_deadline
+              END,
               closed_at = CASE
                 WHEN $2 = 'closed' THEN COALESCE(closed_at, now())
                 ELSE closed_at
@@ -1227,8 +1312,16 @@ app.patch('/api/anticipation-sessions/:id', requireAdmin, async (req, res) => {
               updated_at = now()
         WHERE id = $1
         RETURNING *`,
-      [req.params.id, status || null, liveUrl ?? null, anticipatorSlots ?? null],
+      [
+        req.params.id,
+        status || null,
+        liveUrl ?? null,
+        anticipatorSlots ?? null,
+        req.body?.confirmationDeadline !== undefined,
+        confirmationDeadline,
+      ],
     )
+    await expireUnconfirmedOffers(client)
     return anticipationSessionData(client, updated.rows[0])
   })
   if (!session) {
@@ -1388,6 +1481,81 @@ app.post(
       [req.params.id],
     )
     res.json(await anticipationSessionData(pool, rows[0]))
+  },
+)
+
+app.post(
+  '/api/anticipation-sessions/:id/next',
+  async (req: AuthRequest, res) => {
+    if (!req.user) return
+    const session = await transaction(async (client) => {
+      const current = await client.query(
+        `SELECT s.*, u.username AS created_by_name
+           FROM anticipation_sessions s
+           LEFT JOIN app_users u ON u.id = s.created_by
+          WHERE s.id = $1 AND s.status = 'active'
+          FOR UPDATE OF s`,
+        [req.params.id],
+      )
+      const row = current.rows[0]
+      if (!row) {
+        throw new ApiError(404, 'A sessão de antecipação não está ativa.')
+      }
+      if (!row.awaiting_next || !row.held_storage_id) {
+        throw new ApiError(
+          409,
+          'Confirme uma reserva antes de passar para o próximo.',
+        )
+      }
+      if (row.next_source === 'anticipator') {
+        const held = await client.query(
+          `SELECT anticipation_entry_id, apartment_id
+             FROM apartment_reservations
+            WHERE storage_id = $1`,
+          [row.held_storage_id],
+        )
+        const entryId = held.rows[0]?.anticipation_entry_id
+        if (!entryId) {
+          throw new ApiError(
+            409,
+            'A reserva do antecipador não foi encontrada. Desfaça e confirme de novo.',
+          )
+        }
+        const updated = await client.query(
+          `UPDATE anticipation_entries
+              SET status = 'selected', apartment_id = $2
+            WHERE id = $1 AND session_id = $3 AND status = 'waiting'`,
+          [entryId, held.rows[0].apartment_id, req.params.id],
+        )
+        if (!updated.rowCount) {
+          throw new ApiError(
+            409,
+            'O antecipador desta vez já não está aguardando.',
+          )
+        }
+      }
+      const used = await countConsumedAnticipators(client, String(req.params.id))
+      const nextSource = choiceSourceAfterTurn(
+        row.next_source === 'draw' ? 'draw' : 'anticipator',
+        used,
+        Number(row.anticipator_slots ?? 112),
+      )
+      const advanced = await client.query(
+        `UPDATE anticipation_sessions
+            SET next_source = $2,
+                awaiting_next = false,
+                held_storage_id = NULL,
+                updated_at = now()
+          WHERE id = $1
+          RETURNING *`,
+        [req.params.id, nextSource],
+      )
+      return anticipationSessionData(client, {
+        ...advanced.rows[0],
+        created_by_name: row.created_by_name,
+      })
+    })
+    res.json(session)
   },
 )
 
@@ -1623,6 +1791,12 @@ app.put(
           if (!session) {
             throw new ApiError(409, 'A sessão de antecipação não está ativa.')
           }
+          if (session.awaiting_next) {
+            throw new ApiError(
+              409,
+              'Passe para o próximo ou desfaça a reserva antes de uma nova escolha.',
+            )
+          }
           if (session.next_source !== choiceSource) {
             throw new ApiError(
               409,
@@ -1653,23 +1827,14 @@ app.put(
               )
             }
             entryId = nextEntry.id
-            await client.query(
-              `UPDATE anticipation_entries
-                  SET status = 'selected', apartment_id = $2
-                WHERE id = $1`,
-              [entryId, apartmentId],
-            )
           }
           await client.query(
             `UPDATE anticipation_sessions
-                SET next_source =
-                  CASE next_source
-                    WHEN 'anticipator' THEN 'draw'
-                    ELSE 'anticipator'
-                  END,
+                SET awaiting_next = true,
+                    held_storage_id = $2,
                     updated_at = now()
               WHERE id = $1`,
-            [anticipationSessionId],
+            [anticipationSessionId, storageId],
           )
         }
         const before = existing ? reservationData(existing) : undefined
@@ -1764,6 +1929,14 @@ app.delete(
       await client.query('DELETE FROM apartment_reservations WHERE storage_id = $1', [
         storageId,
       ])
+      await client.query(
+        `UPDATE anticipation_sessions
+            SET awaiting_next = false,
+                held_storage_id = NULL,
+                updated_at = now()
+          WHERE held_storage_id = $1`,
+        [storageId],
+      )
       return insertAudit(client, {
         storageId,
         action: 'removed',
@@ -2111,6 +2284,12 @@ app.post(
           if (!session) {
             throw new ApiError(409, 'A sessão de antecipação não está ativa.')
           }
+          if (session.awaiting_next) {
+            throw new ApiError(
+              409,
+              'Desfaça a reserva ou passe para o próximo antes de abdicar.',
+            )
+          }
           if (session.next_source !== source) {
             throw new ApiError(
               409,
@@ -2146,11 +2325,27 @@ app.post(
                 WHERE id = $1`,
               [nextEntry.id],
             )
+            const used = await countConsumedAnticipators(
+              client,
+              anticipationSessionId,
+            )
+            const nextSource = choiceSourceAfterTurn(
+              session.next_source === 'draw' ? 'draw' : 'anticipator',
+              used,
+              Number(session.anticipator_slots ?? 112),
+              true,
+            )
+            if (nextSource !== session.next_source) {
+              await client.query(
+                `UPDATE anticipation_sessions
+                    SET next_source = $2, updated_at = now()
+                  WHERE id = $1`,
+                [session.id, nextSource],
+              )
+            }
           }
-          // Abdicar consome apenas o registro atual. A origem da próxima
-          // tentativa não muda: antecipador continua antecipador e sorteio
-          // continua sorteio. A alternância acontece somente após reservar
-          // uma unidade com sucesso.
+          // Antes de esgotar as vagas, abdicar mantém a mesma vez.
+          // A 112ª chamada, contando abdicação, passa a vez só para o sorteio.
         }
         const { rows } = await client.query(
           `INSERT INTO draw_declines
@@ -2292,11 +2487,11 @@ app.post(
       await client.query(
         `INSERT INTO contemplated_associates
           (building, draw_group, associate_code, apartment_id)
-         SELECT building, $2, trim(ball), apartment_id
+         SELECT building, $2::varchar, trim(ball), apartment_id
            FROM apartment_reservations
           WHERE building = $1
             AND ball ~ '^[0-9]{6}$'
-            AND left(trim(ball), 2) = $2
+            AND left(trim(ball), 2) = $2::text
          ON CONFLICT (building, associate_code) DO UPDATE
            SET draw_group = EXCLUDED.draw_group,
                apartment_id = EXCLUDED.apartment_id,
@@ -2346,6 +2541,113 @@ app.post(
   },
 )
 
+const ISSUE_KINDS = ['falha', 'melhoria'] as const
+const ISSUE_PRIORITIES = ['baixa', 'media', 'alta'] as const
+const ISSUE_STAGES = ['backlog', 'doing', 'done'] as const
+
+const issueData = (row: Record<string, unknown>) => ({
+  id: String(row.id),
+  number: Number(row.issue_number),
+  title: String(row.title),
+  kind: String(row.kind),
+  priority: String(row.priority),
+  stage: String(row.stage),
+  context: String(row.context),
+  expected: String(row.expected ?? ''),
+  place: String(row.place ?? ''),
+  authorName: String(row.author_name),
+  createdAt: new Date(String(row.created_at)).toISOString(),
+  updatedAt: new Date(String(row.updated_at)).toISOString(),
+})
+
+app.get('/api/issues', requireAdmin, async (_request, response) => {
+  const { rows } = await pool.query(
+    `SELECT id, issue_number, title, kind, priority, stage, context, expected,
+            place, author_name, created_at, updated_at
+       FROM product_issues
+      ORDER BY created_at DESC`,
+  )
+  response.json(rows.map(issueData))
+})
+
+app.post('/api/issues', async (request: AuthRequest, response) => {
+  const title = String(request.body?.title ?? '').trim()
+  const context = String(request.body?.context ?? '').trim()
+  const expected = String(request.body?.expected ?? '').trim()
+  const place = String(request.body?.place ?? '').trim().slice(0, 160)
+  const kind = String(request.body?.kind ?? '')
+  const priority = String(request.body?.priority ?? '')
+  if (
+    title.length < 4 ||
+    title.length > 180 ||
+    context.length < 8 ||
+    context.length > 2000 ||
+    expected.length > 2000 ||
+    !ISSUE_KINDS.includes(kind as (typeof ISSUE_KINDS)[number]) ||
+    !ISSUE_PRIORITIES.includes(priority as (typeof ISSUE_PRIORITIES)[number])
+  ) {
+    response.status(400).json({
+      error: 'Informe título, tipo, prioridade e o que aconteceu.',
+    })
+    return
+  }
+  const { rows } = await pool.query(
+    `INSERT INTO product_issues
+      (id, title, kind, priority, context, expected, place, author_name)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+     RETURNING id, issue_number, title, kind, priority, stage, context,
+               expected, place, author_name, created_at, updated_at`,
+    [
+      randomUUID(),
+      title,
+      kind,
+      priority,
+      context,
+      expected,
+      place,
+      request.user?.username ?? 'Equipe',
+    ],
+  )
+  response.status(201).json(issueData(rows[0]))
+})
+
+app.patch('/api/issues/:id', requireAdmin, async (request, response) => {
+  const id = String(request.params.id)
+  const stage = request.body?.stage
+  const priority = request.body?.priority
+  const kind = request.body?.kind
+  if (
+    (stage !== undefined &&
+      !ISSUE_STAGES.includes(stage as (typeof ISSUE_STAGES)[number])) ||
+    (priority !== undefined &&
+      !ISSUE_PRIORITIES.includes(
+        priority as (typeof ISSUE_PRIORITIES)[number],
+      )) ||
+    (kind !== undefined &&
+      !ISSUE_KINDS.includes(kind as (typeof ISSUE_KINDS)[number])) ||
+    (stage === undefined && priority === undefined && kind === undefined)
+  ) {
+    response.status(400).json({ error: 'Atualização inválida.' })
+    return
+  }
+  const { rows } = await pool.query(
+    `UPDATE product_issues
+        SET stage = COALESCE($2, stage),
+            priority = COALESCE($3, priority),
+            kind = COALESCE($4, kind),
+            updated_at = now()
+      WHERE id = $1
+      RETURNING id, issue_number, title, kind, priority, stage, context,
+                expected, place, author_name, created_at, updated_at`,
+    [id, stage ?? null, priority ?? null, kind ?? null],
+  )
+  if (!rows[0]) {
+    response.status(404).json({ error: 'Item não encontrado.' })
+    return
+  }
+  response.json(issueData(rows[0]))
+})
+
 registerCobrancaRoutes(app)
 
 app.use(
@@ -2374,5 +2676,9 @@ app.use((_request, response) => {
 
 app.listen(port, '127.0.0.1', () => {
   startCollectionAgent()
+  void expireUnconfirmedOffers().catch(() => undefined)
+  setInterval(() => {
+    void expireUnconfirmedOffers().catch(() => undefined)
+  }, 30_000)
   console.log(`Evo Coop Live disponível em http://127.0.0.1:${port}`)
 })

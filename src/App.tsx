@@ -7,6 +7,7 @@ import {
   Eye,
   FileText,
   Filter,
+  KeyRound,
   Layers3,
   LogOut,
   Maximize2,
@@ -19,6 +20,7 @@ import {
   ShieldCheck,
   Ticket,
   Trophy,
+  Kanban,
   X,
 } from 'lucide-react'
 import { getCurrentUser, logout, type AppUser } from './auth/localAuth'
@@ -34,6 +36,7 @@ import { FloorPlanScene } from './components/FloorPlanScene'
 import { LoginScreen } from './components/LoginScreen'
 import { RankingBoard } from './components/RankingBoard'
 import { CobrancaDesk } from './components/CobrancaDesk'
+import { IssueDesk } from './components/IssueDesk'
 import { SiteFooter } from './components/SiteFooter'
 import { SurroundingIcon } from './components/SurroundingIcon'
 import { TurnSign } from './components/TurnSign'
@@ -46,6 +49,7 @@ import {
   apartmentStorageId,
   buildingEndingsForFloor,
   buildingFloors,
+  viewForEnding,
   type ApartmentStatus,
   type BuildingKind,
   type Ending,
@@ -181,9 +185,11 @@ function App() {
   const [declineError, setDeclineError] = useState('')
   const [declineBusy, setDeclineBusy] = useState(false)
   const [presenting, setPresenting] = useState(false)
+  const [issueBoardOpen, setIssueBoardOpen] = useState(false)
   const [anticipationSession, setAnticipationSession] =
     useState<AnticipationSession | null>(null)
   const [anticipationBusy, setAnticipationBusy] = useState(false)
+  const [turnBusy, setTurnBusy] = useState(false)
   const [anticipationError, setAnticipationError] = useState('')
 
   const refreshMap = async () => {
@@ -281,7 +287,7 @@ function App() {
     setFloorFilter('all')
     setEndingFilter('all')
     setStatusFilter('all')
-    setView('perspective')
+    setView(viewForEnding(nextConfig, nextConfig.endings[0]))
     setFloorPlanKind('typical')
   }
 
@@ -432,6 +438,7 @@ function App() {
   const selectApartment = (id: string) => {
     setSelectedId(id)
     const apartment = config.apartmentById[id]
+    if (apartment) setView(viewForEnding(config, apartment.ending))
     if (config.groundFloorModel && apartment) {
       setFloorPlanKind(apartment.floor === 0 ? 'ground' : 'typical')
     }
@@ -439,6 +446,8 @@ function App() {
 
   const requestApartment = (id: string) => {
     setSelectedId(id)
+    const apartment = config.apartmentById[id]
+    if (apartment) setView(viewForEnding(config, apartment.ending))
     const storageId = apartmentStorageId(building, id)
     const existing = assignments[storageId]
     const parsed = existing
@@ -549,9 +558,11 @@ function App() {
         existingReservation ? justification.trim() : undefined,
       )
       showNotice(
-        anticipationSession && anticipationSession.status !== 'active'
-          ? `Apartamento ${pendingId} reservado · a vez só alterna depois de iniciar a escolha no ranking`
-          : `Apartamento ${pendingId} reservado`,
+        anticipationSession?.status === 'active' && !existingReservation
+          ? `Apartamento ${pendingId} reservado. A plaquinha muda no botão Próximo.`
+          : anticipationSession && anticipationSession.status !== 'active'
+            ? `Apartamento ${pendingId} reservado · a vez só alterna depois de iniciar a escolha no ranking`
+            : `Apartamento ${pendingId} reservado`,
       )
       await refreshMap()
       await refreshAnticipation()
@@ -582,6 +593,28 @@ function App() {
           )
         }
       }, 200)
+    }
+  }
+
+  const advanceTurn = async () => {
+    if (!anticipationSession?.awaitingNext || turnBusy) return
+    setTurnBusy(true)
+    try {
+      const session = await api.advanceAnticipationTurn(anticipationSession.id)
+      setAnticipationSession(session)
+      showNotice(
+        session.nextSource === 'anticipator'
+          ? 'Plaquinha atualizada: vez do antecipador.'
+          : 'Plaquinha atualizada: vez do sorteio.',
+      )
+    } catch (error) {
+      showNotice(
+        error instanceof Error
+          ? error.message
+          : 'Não foi possível passar para o próximo.',
+      )
+    } finally {
+      setTurnBusy(false)
     }
   }
 
@@ -624,18 +657,26 @@ function App() {
 
   if (!eventWorkspace) {
     return (
-      <EventWorkspacePicker
-        onConfirm={(workspace) => {
-          selectBuilding(workspace.building)
-          setActiveDrawGroups((current) => ({
-            ...current,
-            [workspace.building]: workspace.group,
-          }))
-          setAnticipationSession(null)
-          setAnticipationError('')
-          setEventWorkspace(workspace)
-        }}
-      />
+      <>
+        <EventWorkspacePicker
+          onConfirm={(workspace) => {
+            selectBuilding(workspace.building)
+            setActiveDrawGroups((current) => ({
+              ...current,
+              [workspace.building]: workspace.group,
+            }))
+            setAnticipationSession(null)
+            setAnticipationError('')
+            setEventWorkspace(workspace)
+          }}
+        />
+        <IssueDesk
+          admin={currentUser.role === 'admin'}
+          place="Seleção do evento"
+          boardOpen={issueBoardOpen}
+          onBoardOpen={setIssueBoardOpen}
+        />
+      </>
     )
   }
 
@@ -769,6 +810,32 @@ function App() {
         setAnticipationBusy(false)
       }
     },
+    onSaveConfirmationDeadline: async (confirmationDeadline: string | null) => {
+      if (!anticipationSession) return
+      setAnticipationBusy(true)
+      setAnticipationError('')
+      try {
+        setAnticipationSession(
+          await api.setConfirmationDeadline(
+            anticipationSession.id,
+            confirmationDeadline,
+          ),
+        )
+        showNotice(
+          confirmationDeadline
+            ? `Prazo para confirmar: ${new Date(confirmationDeadline).toLocaleString('pt-BR')}`
+            : 'Prazo de confirmação removido',
+        )
+      } catch (error) {
+        setAnticipationError(
+          error instanceof Error
+            ? error.message
+            : 'Não foi possível salvar o prazo.',
+        )
+      } finally {
+        setAnticipationBusy(false)
+      }
+    },
     onSaveLiveUrl: async (liveUrl: string) => {
       if (!anticipationSession) return
       setAnticipationBusy(true)
@@ -894,6 +961,16 @@ function App() {
               <Settings size={16} /> <span>Administrar</span>
             </button>
           )}
+          {currentUser.role === 'admin' && (
+            <button
+              type="button"
+              className="ghost-button"
+              onClick={() => setIssueBoardOpen(true)}
+              title="Roadmap e issues"
+            >
+              <Kanban size={16} /> <span>Roadmap</span>
+            </button>
+          )}
           <button
             type="button"
             className="ghost-button data-button"
@@ -945,16 +1022,29 @@ function App() {
               : 'Sorteio'}
           </strong>
           <small>
-            {anticipationSession.nextSource === 'anticipator' &&
-            anticipationSession.nextAnticipator
-              ? `${anticipationSession.nextAnticipator.associateCode} · ${anticipationSession.nextAnticipator.participant}`
-              : anticipationSession.nextSource === 'draw'
-                ? 'Informe a bolinha ao escolher a unidade'
-                : 'Ranking de antecipadores concluído'}
+            {anticipationSession.awaitingNext
+              ? 'Reserva feita. Próximo troca a plaquinha.'
+              : anticipationSession.nextSource === 'anticipator' &&
+                  anticipationSession.nextAnticipator
+                ? `${anticipationSession.nextAnticipator.associateCode} · ${anticipationSession.nextAnticipator.participant}`
+                : anticipationSession.nextSource === 'draw'
+                  ? 'Informe a bolinha ao escolher a unidade'
+                  : 'Ranking de antecipadores concluído'}
           </small>
           <span className="active-turn-rule">
-            Reservou uma unidade: alterna · Abdicou: mantém a vez
+            {anticipationSession.anticipatorTurnsUsed >=
+            anticipationSession.anticipatorSlots
+              ? `As ${anticipationSession.anticipatorSlots} chamadas de antecipador acabaram. A vez fica só no sorteio.`
+              : `A plaquinha só muda no Próximo. Abdições contam nas ${anticipationSession.anticipatorSlots} chamadas.`}
           </span>
+          <button
+            type="button"
+            className="turn-next-button"
+            disabled={!anticipationSession.awaitingNext || turnBusy}
+            onClick={() => void advanceTurn()}
+          >
+            Próximo
+          </button>
         </section>
       )}
 
@@ -1073,7 +1163,12 @@ function App() {
                   onActivate={requestApartment}
                 />
                 {!showFloorPlan && (
-                  <TurnSign session={anticipationSession} variant="canvas" />
+                  <TurnSign
+                    session={anticipationSession}
+                    variant="canvas"
+                    nextBusy={turnBusy}
+                    onNext={() => void advanceTurn()}
+                  />
                 )}
                 {showEnvironment && !showFloorPlan ? (
                   <EnvironmentOverlay
@@ -1121,6 +1216,7 @@ function App() {
                       Selecionado
                     </span>
                     <span>
+                      <KeyRound size={12} className="legend-key" aria-hidden="true" />
                       <i
                         style={
                           {
@@ -1146,7 +1242,12 @@ function App() {
                     </div>
                     <small>Clique em uma unidade</small>
                   </div>
-                  <TurnSign session={anticipationSession} variant="canvas" />
+                  <TurnSign
+                    session={anticipationSession}
+                    variant="canvas"
+                    nextBusy={turnBusy}
+                    onNext={() => void advanceTurn()}
+                  />
                   {config.groundFloorModel && (
                     <div className="floor-plan-tabs" aria-label="Tipo de planta">
                       <button
@@ -1159,6 +1260,7 @@ function App() {
                               ? 1
                               : selectedApartment.ending
                           setSelectedId(apartmentId(0, ending))
+                          setView(viewForEnding(config, ending))
                         }}
                       >
                         Térreo · 7 aptos
@@ -1175,6 +1277,7 @@ function App() {
                           setSelectedId(
                             apartmentId(floor, selectedApartment.ending),
                           )
+                          setView(viewForEnding(config, selectedApartment.ending))
                         }}
                       >
                         Pavimento · 8 aptos
@@ -1221,7 +1324,12 @@ function App() {
                 </div>
                 <ShieldCheck size={21} className="reservation-shield" />
               </div>
-              <TurnSign session={anticipationSession} variant="panel" />
+              <TurnSign
+                session={anticipationSession}
+                variant="panel"
+                nextBusy={turnBusy}
+                onNext={() => void advanceTurn()}
+              />
               <div className="draw-metrics-grid">
                 <article>
                   <strong>{config.apartments.length}</strong>
@@ -1836,6 +1944,13 @@ function App() {
 
       {notice && <div className="toast">{notice}</div>}
       {!presenting && <SiteFooter floating />}
+      <IssueDesk
+        admin={currentUser.role === 'admin'}
+        place={`${eventTitle} · Grupo ${activeDrawGroup ?? '—'} · Bloco ${eventWorkspace.block}`}
+        hidden={presenting}
+        boardOpen={issueBoardOpen}
+        onBoardOpen={setIssueBoardOpen}
+      />
     </div>
   )
 }

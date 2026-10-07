@@ -31,6 +31,7 @@ import type {
   ApartmentStatuses,
   AuditEvent,
 } from '../store/apartments'
+import type { IssueInput, ProductIssue } from '../config/issues'
 
 export type MapSnapshot = {
   statuses: Partial<ApartmentStatuses>
@@ -271,6 +272,14 @@ export const api = {
         body: JSON.stringify({ anticipatorSlots }),
       },
     ),
+  setConfirmationDeadline: (id: string, confirmationDeadline: string | null) =>
+    request<AnticipationSession>(
+      `/api/anticipation-sessions/${encodeURIComponent(id)}`,
+      {
+        method: 'PATCH',
+        body: JSON.stringify({ confirmationDeadline }),
+      },
+    ),
   addAnticipationEntry: (sessionId: string, input: AnticipationEntryInput) =>
     request<AnticipationSession>(
       `/api/anticipation-sessions/${encodeURIComponent(sessionId)}/entries`,
@@ -282,6 +291,11 @@ export const api = {
   resetAnticipationRanking: (sessionId: string) =>
     request<AnticipationSession>(
       `/api/anticipation-sessions/${encodeURIComponent(sessionId)}/reset`,
+      { method: 'POST' },
+    ),
+  advanceAnticipationTurn: (sessionId: string) =>
+    request<AnticipationSession>(
+      `/api/anticipation-sessions/${encodeURIComponent(sessionId)}/next`,
       { method: 'POST' },
     ),
   removeAnticipationEntry: (sessionId: string, entryId: string) =>
@@ -395,4 +409,18 @@ export const api = {
     }),
   portalLogout: () =>
     request<void>('/api/public/portal/logout', { method: 'POST' }),
+  createIssue: (input: IssueInput) =>
+    request<ProductIssue>('/api/issues', {
+      method: 'POST',
+      body: JSON.stringify(input),
+    }),
+  issues: () => request<ProductIssue[]>('/api/issues'),
+  updateIssue: (
+    id: string,
+    patch: Partial<Pick<ProductIssue, 'stage' | 'priority' | 'kind'>>,
+  ) =>
+    request<ProductIssue>(`/api/issues/${encodeURIComponent(id)}`, {
+      method: 'PATCH',
+      body: JSON.stringify(patch),
+    }),
 }

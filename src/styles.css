@@ -455,7 +455,7 @@ select:focus-visible {
 .active-turn-strip {
   min-height: 52px;
   display: grid;
-  grid-template-columns: auto auto minmax(0, 1fr) auto;
+  grid-template-columns: auto auto minmax(0, 1fr) auto auto;
   align-items: center;
   gap: 10px;
   padding: 8px 28px;
@@ -825,8 +825,30 @@ select:focus-visible {
   transform: scale(1.12);
 }
 
-.floor-unit-label.is-selected span {
-  color: var(--unit-color);
+.floor-unit-label.is-reserved strong {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 3px;
+}
+
+.floor-unit-label.is-reserved strong svg {
+  flex: 0 0 auto;
+  width: 12px;
+  height: 12px;
+  color: #009739;
+  stroke: #009739;
+}
+
+.availability-legend .legend-key,
+.unit-key {
+  flex: 0 0 auto;
+  color: #009739;
+}
+
+.unit-cell.is-reserved {
+  background: #e3eef8;
+  border-color: #b7cfe4;
 }
 
 .canvas-wrap canvas {
@@ -1357,14 +1379,22 @@ select:focus-visible {
 
 /* Placa da vez atual, espelha a faixa do topo. */
 .overview-turn {
-  display: grid;
-  grid-template-columns: auto auto minmax(0, 1fr);
+  display: flex;
   align-items: center;
   gap: 9px;
   margin-top: 12px;
   padding: 9px 11px;
   border: 1px solid;
   border-radius: 10px;
+}
+
+.turn-sign-copy {
+  display: grid;
+  grid-template-columns: auto auto minmax(0, 1fr);
+  align-items: center;
+  gap: 9px;
+  flex: 1;
+  min-width: 0;
 }
 
 .overview-turn.is-anticipator {
@@ -1392,10 +1422,9 @@ select:focus-visible {
 
 /* Placa da vez sobre o mapa 3D e sobre a planta ampliada. */
 .canvas-turn-sign {
-  display: grid;
-  grid-template-columns: auto auto;
+  display: flex;
   align-items: center;
-  gap: 2px 8px;
+  gap: 8px;
   position: absolute;
   z-index: 4;
   top: 12px;
@@ -1405,6 +1434,36 @@ select:focus-visible {
   border-radius: 10px;
   backdrop-filter: blur(9px);
   pointer-events: none;
+}
+
+.canvas-turn-sign .turn-sign-copy {
+  display: grid;
+  grid-template-columns: auto auto;
+  gap: 2px 8px;
+}
+
+.turn-next-button {
+  height: 28px;
+  padding: 0 10px;
+  border: 1px solid currentColor;
+  border-radius: 999px;
+  background: transparent;
+  color: inherit;
+  font: 800 11px/1 'Manrope', sans-serif;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  cursor: pointer;
+  pointer-events: auto;
+}
+
+.turn-next-button:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
+.canvas-turn-sign .turn-next-button {
+  height: 26px;
+  background: rgb(5 17 29 / 55%);
 }
 
 .floor-plan-view .canvas-turn-sign {
@@ -4525,6 +4584,49 @@ select:focus-visible {
   font-size: 0.78rem;
 }
 
+.board-deadline {
+  display: grid;
+  grid-template-columns: auto minmax(200px, 240px) minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 10px;
+  margin-top: 14px;
+  padding: 12px 14px;
+  border: 1px dashed #f0b27a;
+  border-radius: 12px;
+  background: #fff8f1;
+}
+
+.board-deadline > span {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  color: #9a3412;
+  font-size: 0.71rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.board-deadline input {
+  height: 38px;
+  padding: 0 11px;
+  border: 1px solid #f0c7a0;
+  border-radius: 10px;
+  background: var(--white);
+  font-weight: 700;
+}
+
+.board-deadline small {
+  color: #9a3412;
+  font-size: 0.78rem;
+}
+
+@media (max-width: 900px) {
+  .board-deadline {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
 .board-table-row.is-selected {
   border-color: #bfe6e1;
   background: #f4fbfa;
@@ -6325,8 +6427,13 @@ select:focus-visible {
   }
 
   .active-turn-strip {
-    grid-template-columns: auto minmax(0, 1fr);
+    grid-template-columns: auto minmax(0, 1fr) auto;
     padding: 9px 14px;
+  }
+
+  .active-turn-strip .turn-next-button {
+    grid-column: 3;
+    grid-row: 1;
   }
 
   .active-turn-strip strong {
@@ -7160,6 +7267,255 @@ select:focus-visible {
 
   .cobranca-chat-messages {
     min-height: 280px;
+  }
+}
+
+.issue-dock {
+  position: fixed;
+  z-index: 40;
+  right: 16px;
+  bottom: 16px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.issue-report-button,
+.issue-roadmap-button {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 36px;
+  padding: 0 12px;
+  border: 0;
+  border-radius: 999px;
+  font: 700 12px 'Manrope', sans-serif;
+  cursor: pointer;
+  box-shadow: 0 8px 20px rgb(8 24 40 / 18%);
+}
+
+.issue-report-button {
+  background: #12324d;
+  color: #fff;
+}
+
+.issue-roadmap-button {
+  background: #fff;
+  color: #12324d;
+  border: 1px solid #d5e0ea;
+}
+
+.issue-toast {
+  position: fixed;
+  z-index: 41;
+  right: 16px;
+  bottom: 62px;
+  max-width: 280px;
+  margin: 0;
+  padding: 10px 12px;
+  border-radius: 10px;
+  background: #12324d;
+  color: #fff;
+  font-size: 12px;
+}
+
+.issue-report-dialog {
+  width: min(520px, 100%);
+  max-height: calc(100vh - 40px);
+  overflow: auto;
+  display: grid;
+  gap: 12px;
+  padding: 18px;
+  border-radius: 16px;
+  background: #f8fafc;
+}
+
+.issue-report-dialog header,
+.issue-board-top,
+.issue-card footer,
+.issue-card-meta,
+.issue-card-actions,
+.issue-board-actions,
+.issue-form-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.issue-report-dialog header span,
+.issue-board-top span,
+.issue-place,
+.issue-column header small,
+.issue-card footer,
+.issue-expected {
+  color: #64748b;
+  font-size: 12px;
+}
+
+.issue-report-dialog h2,
+.issue-board-top h2,
+.issue-column h3,
+.issue-card h4 {
+  margin: 0;
+}
+
+.issue-report-dialog label,
+.issue-board-filters {
+  display: grid;
+  gap: 6px;
+  color: #334155;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.issue-report-dialog input,
+.issue-report-dialog select,
+.issue-report-dialog textarea,
+.issue-board-filters input,
+.issue-board-filters select {
+  width: 100%;
+  padding: 9px 10px;
+  border: 1px solid #d5e0ea;
+  border-radius: 8px;
+  background: #fff;
+  color: #0f172a;
+  font: 500 13px 'Manrope', sans-serif;
+}
+
+.issue-form-row label {
+  flex: 1;
+}
+
+.issue-report-dialog .form-error,
+.issue-board-shell .form-error {
+  margin: 0;
+  color: #b42318;
+  font-size: 12px;
+}
+
+.issue-board-shell {
+  position: fixed;
+  z-index: 80;
+  inset: 0;
+  display: grid;
+  grid-template-rows: auto auto auto minmax(0, 1fr);
+  gap: 12px;
+  padding: 18px;
+  background: #f4f7fb;
+  overflow: auto;
+}
+
+.issue-board-filters {
+  grid-template-columns: minmax(0, 1fr) 180px 200px;
+}
+
+.issue-columns {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+  min-height: 0;
+}
+
+.issue-column {
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+  min-height: 240px;
+  padding: 12px;
+  border: 1px solid #e2e8f0;
+  border-radius: 14px;
+  background: #fff;
+}
+
+.issue-column-list {
+  display: grid;
+  align-content: start;
+  gap: 10px;
+  overflow: auto;
+}
+
+.issue-card {
+  display: grid;
+  gap: 8px;
+  padding: 12px;
+  border: 1px solid #e6edf4;
+  border-radius: 12px;
+  background: #fbfdff;
+}
+
+.issue-card p {
+  margin: 0;
+  color: #334155;
+  font-size: 13px;
+  white-space: pre-wrap;
+}
+
+.issue-card footer {
+  align-items: flex-start;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.issue-kind,
+.issue-priority {
+  padding: 3px 7px;
+  border-radius: 999px;
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.issue-kind.is-falha {
+  background: #ffe4e6;
+  color: #be123c;
+}
+
+.issue-kind.is-melhoria {
+  background: #dcfce7;
+  color: #166534;
+}
+
+.issue-priority.is-alta {
+  color: #b45309;
+}
+
+.issue-priority.is-media {
+  color: #1d4ed8;
+}
+
+.issue-priority.is-baixa {
+  color: #64748b;
+}
+
+.issue-card-actions button {
+  padding: 5px 8px;
+  border: 1px solid #d5e0ea;
+  border-radius: 7px;
+  background: #fff;
+  color: #12324d;
+  font: 700 11px 'Manrope', sans-serif;
+  cursor: pointer;
+}
+
+.issue-empty {
+  margin: 8px 0;
+  color: #94a3b8;
+  font-size: 12px;
+}
+
+@media (max-width: 900px) {
+  .issue-columns,
+  .issue-board-filters,
+  .issue-form-row {
+    grid-template-columns: 1fr;
+    display: grid;
+  }
+
+  .issue-dock {
+    left: 12px;
+    right: 12px;
+    justify-content: flex-end;
   }
 }
 

@@ -25,8 +25,9 @@ import {
 } from '../config/collectionNotice'
 import { SiteFooter } from './SiteFooter'
 
+const MIN_INSTALLMENTS = 10
 const MAX_INSTALLMENTS = 30
-const PRESETS = [0, 5, 10, 20, 30]
+const PRESETS = [10, 15, 20, 25, 30]
 
 const formatDate = (value: string) =>
   new Intl.DateTimeFormat('pt-BR', {
@@ -171,15 +172,14 @@ export function AssociatePortal() {
   }
 
   const saveOffer = async () => {
+    if (offerAmount < MIN_INSTALLMENTS || offerAmount > MAX_INSTALLMENTS) return
     setBusy(true)
     setError('')
     try {
       await api.portalOffer('set', offerAmount, whatsappPhone)
       await loadView()
       setNotice(
-        offerAmount === 0
-          ? 'Você recusou antecipar parcelas. O ranking foi atualizado.'
-          : `Ranking atualizado: ${offerAmount} parcela${offerAmount === 1 ? '' : 's'} antecipando.`,
+        `Ranking atualizado: ${offerAmount} parcela${offerAmount === 1 ? '' : 's'} antecipando.`,
       )
     } catch (offerError) {
       setError(
@@ -313,6 +313,8 @@ export function AssociatePortal() {
             ? normalizeWhatsappPhone(you.whatsappPhone)
             : null)),
   )
+  const offerValid =
+    offerAmount >= MIN_INSTALLMENTS && offerAmount <= MAX_INSTALLMENTS
 
   const quotaLabel =
     you && you.position <= view.anticipatorSlots
@@ -458,14 +460,14 @@ export function AssociatePortal() {
                 {you.canSetOffer ? (
                   <>
                     <p className="portal-hint">
-                      Escolha quantas parcelas quer antecipar, até{' '}
-                      {MAX_INSTALLMENTS}. O ranking reordena na hora.
+                      Escolha de {MIN_INSTALLMENTS} a {MAX_INSTALLMENTS} parcelas
+                      para antecipar. O ranking reordena na hora.
                     </p>
                     <div className="offer-stepper">
                       <button
                         type="button"
                         aria-label="Diminuir uma parcela"
-                        disabled={busy || offerAmount <= 0}
+                        disabled={busy || offerAmount <= MIN_INSTALLMENTS}
                         onClick={() => applyOfferText(String(offerAmount - 1))}
                       >
                         <Minus size={18} />
@@ -473,7 +475,7 @@ export function AssociatePortal() {
                       <div className="offer-value">
                         <input
                           inputMode="numeric"
-                          placeholder="0"
+                          placeholder={String(MIN_INSTALLMENTS)}
                           aria-label="Parcelas que quer antecipar"
                           value={offerText}
                           onChange={(event) => applyOfferText(event.target.value)}
@@ -484,7 +486,15 @@ export function AssociatePortal() {
                         type="button"
                         aria-label="Aumentar uma parcela"
                         disabled={busy || offerAmount >= MAX_INSTALLMENTS}
-                        onClick={() => applyOfferText(String(offerAmount + 1))}
+                        onClick={() =>
+                          applyOfferText(
+                            String(
+                              offerAmount < MIN_INSTALLMENTS
+                                ? MIN_INSTALLMENTS
+                                : offerAmount + 1,
+                            ),
+                          )
+                        }
                       >
                         <Plus size={18} />
                       </button>
@@ -521,25 +531,25 @@ export function AssociatePortal() {
                           type="button"
                           key={preset}
                           className={offerAmount === preset ? 'is-active' : ''}
-                          onClick={() =>
-                            applyOfferText(preset === 0 ? '' : String(preset))
-                          }
+                          onClick={() => applyOfferText(String(preset))}
                         >
-                          {preset === 0 ? 'Nenhuma' : preset}
+                          {preset}
                         </button>
                       ))}
                     </div>
                     <button
                       type="button"
                       className="portal-button is-primary is-block"
-                      disabled={busy || !pendingSave}
+                      disabled={busy || !offerValid || !pendingSave}
                       onClick={() => void saveOffer()}
                     >
                       {busy
                         ? 'Salvando…'
-                        : pendingSave
+                        : offerValid && pendingSave
                           ? 'Salvar antecipação'
-                          : 'Antecipação salva'}
+                          : offerValid
+                            ? 'Antecipação salva'
+                            : `Escolha de ${MIN_INSTALLMENTS} a ${MAX_INSTALLMENTS}`}
                     </button>
                   </>
                 ) : (

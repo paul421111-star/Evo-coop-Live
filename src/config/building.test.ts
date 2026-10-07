@@ -5,6 +5,7 @@ import {
   ENDING_MAP,
   FLOOR_COUNT,
   apartmentId,
+  viewForEnding,
 } from './building'
 
 describe('configuração do edifício', () => {
@@ -57,6 +58,17 @@ describe('configuração do edifício', () => {
       ({ xSign, zSign }) => `${xSign}:${zSign}`,
     )
     expect(new Set(quadrants)).toHaveLength(4)
+  })
+
+  it('vira a câmera para a fachada do final escolhido', () => {
+    const even = BUILDING_CONFIGS.even
+    expect(viewForEnding(even, 1)).toBe('west')
+    expect(viewForEnding(even, 4)).toBe('back')
+    expect(viewForEnding(even, 5)).toBe('east')
+    expect(viewForEnding(even, 8)).toBe('front')
+    const odd = BUILDING_CONFIGS.odd
+    expect(viewForEnding(odd, 1)).toBe('back')
+    expect(viewForEnding(odd, 4)).toBe('front')
   })
 
   it('posiciona os finais ímpares como no modelo: 1 e 2 nos fundos, 3 e 4 na frente', () => {

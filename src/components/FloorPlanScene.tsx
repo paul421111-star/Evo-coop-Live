@@ -1,6 +1,7 @@
 import { Suspense, useMemo, useState } from 'react'
 import { Canvas, type ThreeEvent } from '@react-three/fiber'
 import { Edges, Html, OrbitControls, useGLTF } from '@react-three/drei'
+import { KeyRound } from 'lucide-react'
 import {
   SELECTED_UNIT_COLOR,
   STATUS_BY_ID,
@@ -117,17 +118,19 @@ function FloorUnits({
                 color={color}
                 transparent
                 opacity={
-                  status !== 'none'
-                    ? 0.48
-                    : selected
-                      ? 0.46
-                      : highlightAvailability
-                        ? hovered
-                          ? 0.34
-                          : 0.22
-                        : hovered
-                          ? 0.2
-                          : 0.025
+                  status === 'reserved'
+                    ? 0.28
+                    : status !== 'none'
+                      ? 0.48
+                      : selected
+                        ? 0.46
+                        : highlightAvailability
+                          ? hovered
+                            ? 0.34
+                            : 0.22
+                          : hovered
+                            ? 0.2
+                            : 0.025
                 }
                 depthWrite={false}
                 toneMapped={false}
@@ -145,10 +148,17 @@ function FloorUnits({
               style={{ pointerEvents: 'none' }}
             >
               <div
-                className={`floor-unit-label ${selected ? 'is-selected' : ''}`}
+                className={`floor-unit-label ${selected ? 'is-selected' : ''} ${
+                  status === 'reserved' ? 'is-reserved' : ''
+                }`}
                 style={{ '--unit-color': color } as React.CSSProperties}
               >
-                <strong>{id}</strong>
+                <strong>
+                  {status === 'reserved' && (
+                    <KeyRound size={12} aria-hidden="true" />
+                  )}
+                  {id}
+                </strong>
                 <span>
                   {selected && status === 'none'
                     ? 'Selecionado'
@@ -166,6 +176,7 @@ function FloorUnits({
 export function FloorPlanScene(props: Props) {
   const modelUrl = props.modelUrl ?? props.config.floorModel
   if (!modelUrl) return null
+  const mapRotationY = props.config.mapRotationY ?? 0
 
   return (
     <Canvas
@@ -184,14 +195,16 @@ export function FloorPlanScene(props: Props) {
       <ambientLight intensity={1.1} />
       <hemisphereLight args={['#ffffff', '#26394a', 1.4]} />
       <directionalLight position={[20, 40, 18]} intensity={1.8} />
-      <Suspense fallback={null}>
-        <FloorModel url={modelUrl} />
-      </Suspense>
-      <PlanCore
-        config={props.config}
-        overlayY={props.overlayY ?? props.config.floorPlanY ?? 3.02}
-      />
-      <FloorUnits {...props} />
+      <group rotation={[0, mapRotationY, 0]}>
+        <Suspense fallback={null}>
+          <FloorModel url={modelUrl} />
+        </Suspense>
+        <PlanCore
+          config={props.config}
+          overlayY={props.overlayY ?? props.config.floorPlanY ?? 3.02}
+        />
+        <FloorUnits {...props} />
+      </group>
       <OrbitControls
         makeDefault
         target={[0, 0, 0]}
