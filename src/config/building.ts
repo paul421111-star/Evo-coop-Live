@@ -54,6 +54,7 @@ export type BuildingConfig = {
   /** Giro da maquete no mapa, em radianos. O grupo par nasce 180° invertido. */
   mapRotationY?: number
   unitPositions: Record<number, UnitPosition>
+  extraSpaceByEnding?: Partial<Record<Ending, string>>
   planCore?: PlanCore
 }
 
@@ -263,6 +264,12 @@ export const BUILDING_CONFIGS: Record<BuildingKind, BuildingConfig> = {
     hasEnvironmentLabels: true,
     mapRotationY: Math.PI,
     unitPositions: EVEN_UNIT_POSITIONS,
+    extraSpaceByEnding: {
+      2: 'Dependência',
+      3: 'Dependência',
+      6: 'Despensa',
+      7: 'Despensa',
+    },
     planCore: { width: 7.2, depth: 7.2 },
   }),
   'jardim-artes': makeConfig({

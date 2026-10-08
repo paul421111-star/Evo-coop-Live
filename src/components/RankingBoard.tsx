@@ -442,7 +442,7 @@ export function RankingBoard({
               {session.status === 'draft'
                 ? 'Os associados ainda podem informar ou alterar quantas parcelas vão antecipar. Ao terminar este dia, trave as antecipações sem iniciar o sorteio.'
                 : session.status === 'locked'
-                  ? 'O ranking está congelado e ninguém consegue alterar as parcelas. Você pode reabrir para correções ou iniciar o sorteio em outro dia.'
+                  ? 'O ranking está congelado. Ninguém altera a quantidade: o associado só pode manter a antecipação ou não antecipar. Você pode reabrir para correções ou iniciar o sorteio em outro dia.'
                   : 'O sorteio está em andamento e a escolha das unidades acontece no mapa. Se precisar corrigir o ranking, volte para travado.'}
             </p>
 
@@ -564,12 +564,13 @@ export function RankingBoard({
                   }}
                 />
                 <small>
-                  Depois deste horário, quem não clicou em &quot;Manter
-                  antecipação&quot; passa automaticamente para &quot;Não
-                  antecipar&quot;.
+                  Vale depois do travamento. Quem não clicar em &quot;Manter
+                  antecipação&quot; até este horário passa para &quot;Não
+                  antecipar&quot;. Sem prazo, a quantidade informada permanece
+                  até o fim do evento.
                   {session.confirmationDeadline
                     ? ` Agora: ${formatDate(session.confirmationDeadline)}.`
-                    : ' Sem prazo definido, vale 24 horas após o associado informar as parcelas.'}
+                    : ''}
                 </small>
                 {session.confirmationDeadline && (
                   <button

@@ -6,6 +6,7 @@ import {
   formatWhatsappPhone,
   normalizeBrazilPhone,
   normalizeWhatsappPhone,
+  whatsappPhonesMatch,
 } from './collectionNotice'
 
 describe('aviso de antecipação', () => {
@@ -16,6 +17,13 @@ describe('aviso de antecipação', () => {
     expect(normalizeWhatsappPhone('+351 912 345 678')).toBe('351912345678')
     expect(normalizeWhatsappPhone('00351912345678')).toBe('351912345678')
     expect(normalizeWhatsappPhone('+1')).toBeNull()
+  })
+
+  it('só aceita o celular que já está no cadastro', () => {
+    expect(whatsappPhonesMatch('5511917028461', '(11) 91702-8461')).toBe(true)
+    expect(whatsappPhonesMatch('5511917028461', '11917028461')).toBe(true)
+    expect(whatsappPhonesMatch('5511917028461', '(11) 91702-8462')).toBe(false)
+    expect(whatsappPhonesMatch('5511917028461', '')).toBe(false)
   })
 
   it('mascara o celular enquanto digita e mostra número de outro país', () => {

@@ -156,19 +156,24 @@ export function youtubeEmbedUrl(url: string): string | null {
     const parsed = new URL(url)
     if (parsed.hostname === 'youtu.be') {
       const id = parsed.pathname.replace('/', '')
-      return id ? `https://www.youtube.com/embed/${id}` : null
+      return id ? youtubeEmbedSrc(id) : null
     }
     if (
       parsed.hostname === 'youtube.com' ||
       parsed.hostname === 'www.youtube.com'
     ) {
       const id = parsed.searchParams.get('v')
-      return id ? `https://www.youtube.com/embed/${id}` : null
+      return id ? youtubeEmbedSrc(id) : null
     }
   } catch {
     return null
   }
   return null
+}
+
+/** fs=0 esconde a tela cheia do YouTube. A nossa fica no mesmo quadro do parabéns. */
+function youtubeEmbedSrc(id: string) {
+  return `https://www.youtube.com/embed/${id}?fs=0&rel=0`
 }
 
 export type AssociatePortalRankingRow = {
@@ -181,10 +186,13 @@ export type AssociatePortalRankingRow = {
   status: AnticipationEntryStatus
   offerStatus: AnticipationOfferStatus
   apartmentId?: string
+  choiceSource?: 'draw' | 'anticipator'
 }
 
 export type AssociatePortalView = {
   title: string
+  drawGroup: string | null
+  blockLabel: string
   status: AnticipationSessionStatus
   startsAt: string
   endsAt: string
@@ -198,6 +206,7 @@ export type AssociatePortalView = {
     canConfirm: boolean
     canWithdraw: boolean
     offerDecisionUntil: string | null
-    whatsappPhone: string
+    hasWhatsappPhone: boolean
+    whatsappPhoneMasked: string
   }) | null
 }

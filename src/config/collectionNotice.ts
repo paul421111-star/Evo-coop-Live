@@ -115,6 +115,16 @@ export function storedWhatsappPhone(value: string | null | undefined) {
   return digits
 }
 
+/** Confere o número digitado com o cadastro, ignorando máscara e o 55 do Brasil. */
+export function whatsappPhonesMatch(
+  stored: string | null | undefined,
+  typed: string,
+) {
+  const expected = storedWhatsappPhone(stored)
+  const given = normalizeWhatsappPhone(typed)
+  return Boolean(expected && given && expected === given)
+}
+
 export function anticipationAmount(
   installments: number,
   installmentValue: number,

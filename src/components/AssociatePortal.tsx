@@ -1,13 +1,20 @@
 import { useEffect, useRef, useState, type FormEvent } from 'react'
 import {
+  BookOpen,
   CalendarClock,
+  ChevronLeft,
+  ChevronRight,
   Check,
   Clock3,
+  HelpCircle,
   Lock,
   LogOut,
+  Maximize,
+  Minimize,
   Minus,
   Plus,
   Radio,
+  RefreshCw,
   ShieldCheck,
   Trophy,
   X,
@@ -19,15 +26,49 @@ import type {
 } from '../config/anticipation'
 import { youtubeEmbedUrl } from '../config/anticipation'
 import {
-  formatWhatsappPhone,
   normalizeWhatsappPhone,
   phoneFieldValue,
 } from '../config/collectionNotice'
+import { CelebrationOverlay } from './CelebrationOverlay'
 import { SiteFooter } from './SiteFooter'
 
 const MIN_INSTALLMENTS = 10
 const MAX_INSTALLMENTS = 30
 const PRESETS = [10, 15, 20, 25, 30]
+
+const PORTAL_TOUR_STEPS = [
+  {
+    selector: '.portal-topbar',
+    title: 'Seu portal do associado',
+    text: 'Aqui você vê o período da sessão, a situação atual do ranking e pode sair com segurança. O portal atualiza os dados automaticamente.',
+  },
+  {
+    selector: '.portal-hero',
+    title: 'Sua posição e seus números',
+    text: 'Esta área mostra sua posição atual, as parcelas já pagas, as que você informou para antecipar e o total usado para ordenar o ranking.',
+  },
+  {
+    selector: '.portal-decision',
+    title: 'Informe sua antecipação',
+    text: 'Escolha as parcelas desta rodada e digite o celular do cadastro. O total, somando o que já foi antecipado em eventos anteriores, não passa de 30. Enquanto o ranking estiver aberto, a lista é reordenada ao salvar.',
+  },
+  {
+    selector: '.portal-deadline',
+    title: 'Prazo para decidir',
+    text: 'Estes botões só aparecem depois que as antecipações forem travadas. A quantidade fica congelada: você só pode manter ou não antecipar.',
+    optional: true,
+  },
+  {
+    selector: '.portal-ranking-intro',
+    title: 'Ranking ao vivo',
+    text: 'O ranking soma parcelas pagas e antecipadas. Em empate, o menor contrato fica à frente. As primeiras posições indicadas na tela participam como antecipadores.',
+  },
+  {
+    selector: '.portal-live',
+    title: 'Acompanhe a transmissão',
+    text: 'Quando a cooperativa publicar a transmissão, ela aparece aqui. Se a incorporação não estiver disponível, use o botão para abrir a live em outra aba.',
+  },
+] as const
 
 const formatDate = (value: string) =>
   new Intl.DateTimeFormat('pt-BR', {
@@ -39,6 +80,17 @@ const offerLabel = (status: string) => {
   if (status === 'confirmed') return 'Confirmada'
   if (status === 'withdrawn') return 'Não vai antecipar'
   return 'Antecipação informada'
+}
+
+const portalHeading = (portal: AssociatePortalView) => {
+  if (portal.status !== 'active') return portal.title
+  const group = portal.drawGroup ? `do Grupo ${portal.drawGroup}` : ''
+  const block = portal.blockLabel
+    ? portal.blockLabel.toLowerCase().startsWith('bloco')
+      ? ` · ${portal.blockLabel}`
+      : ` · Bloco ${portal.blockLabel}`
+    : ''
+  return `Sorteio ${group}${block}`.replace(/\s+/g, ' ').trim()
 }
 
 const sessionLabel = (status: AnticipationSessionStatus) => {
@@ -63,15 +115,27 @@ export function AssociatePortal() {
   const [notice, setNotice] = useState('')
   const [offerAmount, setOfferAmount] = useState(0)
   const [offerText, setOfferText] = useState('')
-  const [whatsappPhone, setWhatsappPhone] = useState('')
+  const [phoneDraft, setPhoneDraft] = useState('')
+  const [phoneMatches, setPhoneMatches] = useState(false)
+  const [phoneChecked, setPhoneChecked] = useState(false)
   const [signedIn, setSignedIn] = useState(false)
   const [pendingDecision, setPendingDecision] = useState<
     'confirm' | 'withdraw' | null
   >(null)
   const [heroVisible, setHeroVisible] = useState(true)
+  const [tourStep, setTourStep] = useState<number | null>(null)
+  const [tourRect, setTourRect] = useState<DOMRect | null>(null)
+  const [celebration, setCelebration] = useState<{
+    apartmentId: string
+    associateCode: string
+    source: 'draw' | 'anticipator'
+  } | null>(null)
+  const seenApartment = useRef<string | null | undefined>(undefined)
   const portalRef = useRef<HTMLElement | null>(null)
   const heroRef = useRef<HTMLElement | null>(null)
   const myRowRef = useRef<HTMLLIElement | null>(null)
+  const liveStageRef = useRef<HTMLDivElement | null>(null)
+  const [liveFullscreen, setLiveFullscreen] = useState(false)
 
   const loadChallenge = async () => {
     const next = await api.portalChallenge()
@@ -90,11 +154,6 @@ export function AssociatePortal() {
           ? String(data.you.offeredInstallments)
           : '',
       )
-      setWhatsappPhone(
-        data.you.whatsappPhone
-          ? formatWhatsappPhone(data.you.whatsappPhone)
-          : '',
-      )
     }
   }
 
@@ -105,7 +164,8 @@ export function AssociatePortal() {
       } catch {
         setView(null)
         setSignedIn(false)
-        await loadChallenge().catch(() => undefined)
+        setChallenge(null)
+        setAnswer('')
       } finally {
         setReady(true)
       }
@@ -126,6 +186,77 @@ export function AssociatePortal() {
   }, [signedIn])
 
   const hasHero = Boolean(view?.you)
+
+  const availableTourSteps = PORTAL_TOUR_STEPS.filter(
+    (step) =>
+      !('optional' in step) ||
+      Boolean(document.querySelector<HTMLElement>(step.selector)),
+  )
+  const closeTour = (completed = false) => {
+    if (completed && view?.you) {
+      window.localStorage.setItem(
+        `evo-coop-associate-tour:${view.you.associateCode}`,
+        'seen',
+      )
+    }
+    setTourStep(null)
+    setTourRect(null)
+  }
+
+  useEffect(() => {
+    if (!signedIn || !view?.you || tourStep !== null) return
+    const key = `evo-coop-associate-tour:${view.you.associateCode}`
+    if (window.localStorage.getItem(key) === 'seen') return
+    const timer = window.setTimeout(() => setTourStep(0), 450)
+    return () => window.clearTimeout(timer)
+  }, [signedIn, tourStep, view?.you])
+
+  useEffect(() => {
+    if (tourStep === null) return
+    const step = availableTourSteps[tourStep]
+    if (!step) {
+      closeTour(true)
+      return
+    }
+    const target = document.querySelector<HTMLElement>(step.selector)
+    if (!target) return
+    target.scrollIntoView({ behavior: 'smooth', block: 'center' })
+    const update = () => setTourRect(target.getBoundingClientRect())
+    const timer = window.setTimeout(update, 420)
+    window.addEventListener('resize', update)
+    portalRef.current?.addEventListener('scroll', update)
+    update()
+    return () => {
+      window.clearTimeout(timer)
+      window.removeEventListener('resize', update)
+      portalRef.current?.removeEventListener('scroll', update)
+    }
+  }, [tourStep])
+
+  useEffect(() => {
+    if (!view?.you || view.status !== 'active') return
+    const current = view.you.apartmentId ?? null
+    if (seenApartment.current === undefined) {
+      seenApartment.current = current
+      return
+    }
+    if (!seenApartment.current && current) {
+      setCelebration({
+        apartmentId: current,
+        associateCode: view.you.associateCode,
+        source: view.you.choiceSource === 'anticipator' ? 'anticipator' : 'draw',
+      })
+    }
+    seenApartment.current = current
+  }, [view])
+
+  useEffect(() => {
+    const onChange = () => {
+      setLiveFullscreen(document.fullscreenElement === liveStageRef.current)
+    }
+    document.addEventListener('fullscreenchange', onChange)
+    return () => document.removeEventListener('fullscreenchange', onChange)
+  }, [])
 
   useEffect(() => {
     const hero = heroRef.current
@@ -163,20 +294,52 @@ export function AssociatePortal() {
     }
   }
 
+  useEffect(() => {
+    if (!signedIn) return
+    const normalized = normalizeWhatsappPhone(phoneDraft)
+    if (!normalized) return
+    let cancelled = false
+    const timer = window.setTimeout(() => {
+      void api
+        .portalPhoneCheck(phoneDraft)
+        .then((result) => {
+          if (cancelled) return
+          setPhoneMatches(result.matches)
+          setPhoneChecked(true)
+        })
+        .catch(() => {
+          if (cancelled) return
+          setPhoneMatches(false)
+          setPhoneChecked(false)
+        })
+    }, 300)
+    return () => {
+      cancelled = true
+      window.clearTimeout(timer)
+    }
+  }, [phoneDraft, signedIn])
+
   const applyOfferText = (raw: string) => {
+    const cap = Math.max(
+      0,
+      MAX_INSTALLMENTS - (view?.you?.anticipatedInstallments ?? 0),
+    )
     const digits = raw.replace(/\D/g, '').replace(/^0+/, '').slice(0, 2)
-    const amount =
-      digits === '' ? 0 : Math.min(MAX_INSTALLMENTS, Number(digits))
+    const amount = digits === '' ? 0 : Math.min(cap, Number(digits))
     setOfferText(amount === 0 ? '' : String(amount))
     setOfferAmount(amount)
   }
 
   const saveOffer = async () => {
-    if (offerAmount < MIN_INSTALLMENTS || offerAmount > MAX_INSTALLMENTS) return
+    const cap = Math.max(
+      0,
+      MAX_INSTALLMENTS - (view?.you?.anticipatedInstallments ?? 0),
+    )
+    if (offerAmount < MIN_INSTALLMENTS || offerAmount > cap) return
     setBusy(true)
     setError('')
     try {
-      await api.portalOffer('set', offerAmount, whatsappPhone)
+      await api.portalOffer('set', offerAmount, phoneDraft)
       await loadView()
       setNotice(
         `Ranking atualizado: ${offerAmount} parcela${offerAmount === 1 ? '' : 's'} antecipando.`,
@@ -196,7 +359,7 @@ export function AssociatePortal() {
     setBusy(true)
     setError('')
     try {
-      await api.portalOffer(action, undefined, whatsappPhone)
+      await api.portalOffer(action)
       await loadView()
       setPendingDecision(null)
       setNotice(
@@ -263,28 +426,47 @@ export function AssociatePortal() {
                   inputMode="numeric"
                   maxLength={5}
                   value={documentTail}
-                  onChange={(event) =>
-                    setDocumentTail(
-                      event.target.value.replace(/\D/g, '').slice(0, 5),
-                    )
-                  }
+                  onChange={(event) => {
+                    const digits = event.target.value
+                      .replace(/\D/g, '')
+                      .slice(0, 5)
+                    setDocumentTail(digits)
+                    if (digits.length > 0 && !challenge) void loadChallenge()
+                  }}
                   placeholder="00000"
                 />
               </div>
             </label>
-            <label className="login-field">
-              <span>{challenge?.question ?? 'Verificação'}</span>
-              <div>
-                <input
-                  inputMode="numeric"
-                  value={answer}
-                  onChange={(event) =>
-                    setAnswer(event.target.value.replace(/\D/g, '').slice(0, 3))
-                  }
-                  placeholder="Resultado"
-                />
+            {documentTail.length > 0 && (
+              <div className="login-field">
+                <div className="login-challenge-label">
+                  <label htmlFor="portal-challenge-answer">
+                    {challenge?.question ?? 'Preparando a verificação…'}
+                  </label>
+                  <button
+                    type="button"
+                    className="login-challenge-refresh"
+                    onClick={() => void loadChallenge()}
+                    disabled={busy || !challenge}
+                    aria-label="Gerar outra conta"
+                  >
+                    <RefreshCw size={14} />
+                  </button>
+                </div>
+                <div>
+                  <input
+                    id="portal-challenge-answer"
+                    inputMode="numeric"
+                    value={answer}
+                    onChange={(event) =>
+                      setAnswer(event.target.value.replace(/\D/g, '').slice(0, 3))
+                    }
+                    placeholder="Resultado"
+                    disabled={!challenge}
+                  />
+                </div>
               </div>
-            </label>
+            )}
             {error && <p className="login-error">{error}</p>}
             <button className="login-submit" type="submit" disabled={busy}>
               {busy ? 'Verificando…' : 'Entrar no ranking'}
@@ -306,15 +488,21 @@ export function AssociatePortal() {
     1,
   )
   const pendingSave = Boolean(
-    you &&
-      (offerAmount !== you.offeredInstallments ||
-        normalizeWhatsappPhone(whatsappPhone) !==
-          (you.whatsappPhone
-            ? normalizeWhatsappPhone(you.whatsappPhone)
-            : null)),
+    you && offerAmount !== you.offeredInstallments,
   )
+  const offerCap = you
+    ? Math.max(0, MAX_INSTALLMENTS - you.anticipatedInstallments)
+    : MAX_INSTALLMENTS
   const offerValid =
-    offerAmount >= MIN_INSTALLMENTS && offerAmount <= MAX_INSTALLMENTS
+    offerAmount >= MIN_INSTALLMENTS &&
+    offerAmount <= offerCap &&
+    offerCap >= MIN_INSTALLMENTS
+  const visiblePresets = PRESETS.filter(
+    (preset) => preset >= MIN_INSTALLMENTS && preset <= offerCap,
+  )
+  const canSaveOffer =
+    offerValid && Boolean(you?.hasWhatsappPhone) && phoneMatches
+  const phoneComplete = Boolean(normalizeWhatsappPhone(phoneDraft))
 
   const quotaLabel =
     you && you.position <= view.anticipatorSlots
@@ -374,7 +562,7 @@ export function AssociatePortal() {
           />
           <div className="portal-session">
             <span className="portal-eyebrow">Portal do associado</span>
-            <h1>{view.title}</h1>
+            <h1>{portalHeading(view)}</h1>
             <small>
               <CalendarClock size={13} />
               {formatDate(view.startsAt)} até {formatDate(view.endsAt)}
@@ -387,12 +575,23 @@ export function AssociatePortal() {
             </span>
             <button
               type="button"
+              className="portal-button is-ghost portal-manual-button"
+              onClick={() => setTourStep(0)}
+            >
+              <HelpCircle size={15} /> Manual
+            </button>
+            <button
+              type="button"
               className="portal-button is-ghost"
               onClick={() =>
                 void api.portalLogout().then(() => {
                   setView(null)
                   setSignedIn(false)
-                  void loadChallenge()
+                  setChallenge(null)
+                  setAnswer('')
+                  setPhoneDraft('')
+                  setPhoneMatches(false)
+                  setPhoneChecked(false)
                 })
               }
             >
@@ -446,6 +645,11 @@ export function AssociatePortal() {
                     <span className={`portal-tag ${quotaClass}`}>
                       {quotaLabel}
                     </span>
+                    {you.apartmentId && (
+                      <span className="portal-tag is-apartment">
+                        Apartamento {you.apartmentId}
+                      </span>
+                    )}
                   </div>
                 </div>
               </section>
@@ -460,8 +664,9 @@ export function AssociatePortal() {
                 {you.canSetOffer ? (
                   <>
                     <p className="portal-hint">
-                      Escolha de {MIN_INSTALLMENTS} a {MAX_INSTALLMENTS} parcelas
-                      para antecipar. O ranking reordena na hora.
+                      {you.anticipatedInstallments > 0
+                        ? `Você já antecipou ${you.anticipatedInstallments} parcelas. Nesta rodada pode antecipar de ${MIN_INSTALLMENTS} a ${offerCap}. O máximo total é ${MAX_INSTALLMENTS}.`
+                        : `Escolha de ${MIN_INSTALLMENTS} a ${MAX_INSTALLMENTS} parcelas para antecipar. O ranking reordena na hora.`}
                     </p>
                     <div className="offer-stepper">
                       <button
@@ -485,7 +690,7 @@ export function AssociatePortal() {
                       <button
                         type="button"
                         aria-label="Aumentar uma parcela"
-                        disabled={busy || offerAmount >= MAX_INSTALLMENTS}
+                        disabled={busy || offerAmount >= offerCap}
                         onClick={() =>
                           applyOfferText(
                             String(
@@ -499,34 +704,67 @@ export function AssociatePortal() {
                         <Plus size={18} />
                       </button>
                     </div>
-                    <label className="login-field portal-phone">
-                      <span>WhatsApp</span>
-                      <div>
-                        <input
-                          inputMode="tel"
-                          placeholder="(11) 90000-0000"
-                          autoComplete="tel"
-                          value={whatsappPhone}
-                          onChange={(event) => {
-                            const element = event.target
-                            const next = phoneFieldValue(
-                              element.value,
-                              element.selectionStart,
-                            )
-                            setWhatsappPhone(next.value)
-                            window.requestAnimationFrame(() => {
-                              element.setSelectionRange(next.caret, next.caret)
-                            })
-                          }}
-                        />
-                      </div>
-                    </label>
-                    <p className="portal-hint">
-                      Ao confirmar o lance, a cobrança envia o valor neste
-                      número. Fora do Brasil, comece com + e o código do país.
-                    </p>
+                    <div className="portal-phone-confirmation">
+                      <span>Confirme seu número de celular</span>
+                      {you.hasWhatsappPhone ? (
+                        <>
+                          <strong>{you.whatsappPhoneMasked}</strong>
+                          <label>
+                            Digite o número completo
+                            <input
+                              inputMode="tel"
+                              autoComplete="tel"
+                              placeholder="(11) 90000-0000"
+                              value={phoneDraft}
+                              className={
+                                phoneMatches
+                                  ? 'is-match'
+                                  : phoneChecked
+                                    ? 'is-mismatch'
+                                    : ''
+                              }
+                              onChange={(event) => {
+                                const element = event.target
+                                const next = phoneFieldValue(
+                                  element.value,
+                                  element.selectionStart,
+                                )
+                                setPhoneDraft(next.value)
+                                setPhoneMatches(false)
+                                setPhoneChecked(false)
+                                window.requestAnimationFrame(() => {
+                                  element.setSelectionRange(
+                                    next.caret,
+                                    next.caret,
+                                  )
+                                })
+                              }}
+                            />
+                          </label>
+                          {phoneChecked && !phoneMatches && (
+                            <p className="portal-hint is-error">
+                              Este número não confere com o cadastro.
+                            </p>
+                          )}
+                          {phoneMatches && (
+                            <p className="portal-hint is-match">
+                              Número conferido.
+                            </p>
+                          )}
+                          <p className="portal-hint">
+                            O administrativo enviará as informações da
+                            antecipação para este WhatsApp.
+                          </p>
+                        </>
+                      ) : (
+                        <p className="portal-hint is-error">
+                          Não encontramos um celular cadastrado. Procure a
+                          cooperativa para atualizar seus dados.
+                        </p>
+                      )}
+                    </div>
                     <div className="offer-presets">
-                      {PRESETS.map((preset) => (
+                      {visiblePresets.map((preset) => (
                         <button
                           type="button"
                           key={preset}
@@ -540,40 +778,74 @@ export function AssociatePortal() {
                     <button
                       type="button"
                       className="portal-button is-primary is-block"
-                      disabled={busy || !offerValid || !pendingSave}
+                      disabled={busy || !canSaveOffer || !pendingSave}
                       onClick={() => void saveOffer()}
                     >
                       {busy
                         ? 'Salvando…'
-                        : offerValid && pendingSave
+                        : pendingSave && !phoneMatches
+                          ? phoneChecked
+                            ? 'Número não confere'
+                            : phoneComplete
+                              ? 'Conferindo celular…'
+                              : 'Digite seu celular'
+                          : canSaveOffer && pendingSave
                           ? 'Salvar antecipação'
                           : offerValid
                             ? 'Antecipação salva'
-                            : `Escolha de ${MIN_INSTALLMENTS} a ${MAX_INSTALLMENTS}`}
+                            : `Escolha de ${MIN_INSTALLMENTS} a ${offerCap}`}
                     </button>
+                  </>
+                ) : you.canConfirm || you.canWithdraw ? (
+                  <>
+                    <p className="portal-hint">
+                      As antecipações foram travadas. A quantidade não pode mais
+                      ser alterada. Escolha se mantém ou se não antecipa.
+                    </p>
+                    <p className="portal-locked-offer">
+                      <b>{you.offeredInstallments}</b>
+                      <span>parcelas nesta rodada</span>
+                    </p>
+                    {you.anticipatedInstallments > 0 && (
+                      <p className="portal-hint">
+                        Você já tinha {you.anticipatedInstallments} parcelas
+                        antecipadas. O máximo total continua{' '}
+                        {MAX_INSTALLMENTS}.
+                      </p>
+                    )}
                   </>
                 ) : (
                   <p className="portal-locked">
                     <Lock size={15} />
-                    {view.status === 'draft'
-                      ? 'Sua decisão já foi registrada e não pode mais ser alterada.'
-                      : 'O ranking foi travado para a escolha das unidades.'}
+                    {view.status === 'locked'
+                      ? 'As antecipações foram travadas. Não há quantidade pendente para manter ou recusar.'
+                      : view.status === 'draft' &&
+                          you.anticipatedInstallments > 0 &&
+                          MAX_INSTALLMENTS - you.anticipatedInstallments <
+                            MIN_INSTALLMENTS
+                        ? `Você já antecipou ${you.anticipatedInstallments} de ${MAX_INSTALLMENTS} parcelas. Não há saldo para uma nova antecipação.`
+                        : view.status === 'draft'
+                          ? 'Sua decisão já foi registrada e não pode mais ser alterada.'
+                          : 'O ranking foi travado para a escolha das unidades.'}
                   </p>
                 )}
 
-                {you.offerDecisionUntil &&
-                  (you.canConfirm || you.canWithdraw) && (
+                {(you.canConfirm || you.canWithdraw) && (
                     <div className="portal-deadline">
-                      <div className="portal-deadline-text">
-                        <Clock3 size={16} />
-                        <div>
-                          <b>Você tem até {formatDate(you.offerDecisionUntil)}</b>
-                          <span>
-                            Confirme que vai manter a antecipação ou recuse e
-                            não antecipe nenhuma parcela.
-                          </span>
+                      {you.offerDecisionUntil && (
+                        <div className="portal-deadline-text">
+                          <Clock3 size={16} />
+                          <div>
+                            <b>
+                              Você tem até {formatDate(you.offerDecisionUntil)}
+                            </b>
+                            <span>
+                              Depois desse horário, a antecipação desta rodada
+                              não será mantida.
+                            </span>
+                          </div>
                         </div>
-                      </div>
+                      )}
                       <div className="portal-deadline-actions">
                         {you.canConfirm && (
                           <button
@@ -606,12 +878,29 @@ export function AssociatePortal() {
                 <Radio size={16} /> Transmissão ao vivo
               </h2>
               {embed ? (
-                <iframe
-                  title="Live do sorteio"
-                  src={embed}
-                  allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
-                  allowFullScreen
-                />
+                <div className="portal-live-stage" ref={liveStageRef}>
+                  <iframe
+                    title="Live do sorteio"
+                    src={embed}
+                    allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+                  />
+                  <button
+                    type="button"
+                    className="portal-live-fullscreen"
+                    onClick={() => {
+                      const stage = liveStageRef.current
+                      if (!stage) return
+                      if (document.fullscreenElement === stage) {
+                        void document.exitFullscreen()
+                        return
+                      }
+                      void stage.requestFullscreen()
+                    }}
+                  >
+                    {liveFullscreen ? <Minimize size={16} /> : <Maximize size={16} />}
+                    {liveFullscreen ? 'Sair da tela cheia' : 'Tela cheia'}
+                  </button>
+                </div>
               ) : view.liveUrl ? (
                 <a
                   className="portal-button is-primary is-block"
@@ -631,14 +920,16 @@ export function AssociatePortal() {
           </div>
 
           <section className="portal-card portal-ranking-card">
-            <h2>
-              <Trophy size={16} /> Ranking ao vivo
-            </h2>
-            <p className="portal-hint">
-              <ShieldCheck size={14} /> Atualiza sozinho. Ordena pelo total de
-              parcelas e, em caso de empate, o menor número de contrato fica na
-              frente. As {view.anticipatorSlots} primeiras posições antecipam.
-            </p>
+            <div className="portal-ranking-intro">
+              <h2>
+                <Trophy size={16} /> Ranking ao vivo
+              </h2>
+              <p className="portal-hint">
+                <ShieldCheck size={14} /> Atualiza sozinho. Ordena pelo total de
+                parcelas e, em caso de empate, o menor número de contrato fica na
+                frente. As {view.anticipatorSlots} primeiras posições antecipam.
+              </p>
+            </div>
             <ol className="portal-ranking">
               {view.ranking.map((item) => (
                 <li
@@ -650,7 +941,7 @@ export function AssociatePortal() {
                   }
                   className={`portal-ranking-row is-${item.offerStatus}${
                     item.associateCode === you?.associateCode ? ' is-you' : ''
-                  }${
+                  }${item.apartmentId ? ' is-chosen' : ''}${
                     item.position <= view.anticipatorSlots
                       ? ' is-anticipator'
                       : ' is-outside'
@@ -677,9 +968,15 @@ export function AssociatePortal() {
                     <b>{item.totalInstallments}</b>
                     <small>total</small>
                   </div>
-                  <span className={`portal-tag is-${item.offerStatus}`}>
-                    {offerLabel(item.offerStatus)}
-                  </span>
+                  {item.apartmentId ? (
+                    <span className="portal-tag is-apartment">
+                      Apto {item.apartmentId}
+                    </span>
+                  ) : (
+                    <span className={`portal-tag is-${item.offerStatus}`}>
+                      {offerLabel(item.offerStatus)}
+                    </span>
+                  )}
                 </li>
               ))}
             </ol>
@@ -687,6 +984,135 @@ export function AssociatePortal() {
         </div>
         <SiteFooter tone="dark" />
       </div>
+
+      {tourStep !== null && tourRect && availableTourSteps[tourStep] && (
+        <div className="portal-tour" role="dialog" aria-modal="true">
+          <div
+            className="portal-tour-shade is-top"
+            style={{ height: Math.max(0, tourRect.top - 8) }}
+          />
+          <div
+            className="portal-tour-shade is-left"
+            style={{
+              top: Math.max(0, tourRect.top - 8),
+              width: Math.max(0, tourRect.left - 8),
+              height: tourRect.height + 16,
+            }}
+          />
+          <div
+            className="portal-tour-shade is-right"
+            style={{
+              top: Math.max(0, tourRect.top - 8),
+              left: Math.min(window.innerWidth, tourRect.right + 8),
+              height: tourRect.height + 16,
+            }}
+          />
+          <div
+            className="portal-tour-shade is-bottom"
+            style={{ top: Math.min(window.innerHeight, tourRect.bottom + 8) }}
+          />
+          <div
+            className="portal-tour-focus"
+            style={{
+              top: Math.max(6, tourRect.top - 8),
+              left: Math.max(6, tourRect.left - 8),
+              width: Math.min(
+                window.innerWidth - 12,
+                tourRect.width + 16,
+              ),
+              height: tourRect.height + 16,
+            }}
+          />
+          <section
+            className={`portal-tour-card${
+              tourRect.bottom + 230 < window.innerHeight
+                ? ' is-below'
+                : ' is-above'
+            }`}
+            style={{
+              left: Math.min(
+                Math.max(12, tourRect.left),
+                Math.max(12, window.innerWidth - 372),
+              ),
+              ...(tourRect.bottom + 230 < window.innerHeight
+                ? { top: tourRect.bottom + 18 }
+                : { bottom: window.innerHeight - tourRect.top + 18 }),
+            }}
+          >
+            <header>
+              <span>
+                <BookOpen size={15} /> Manual do associado
+              </span>
+              <b>
+                {tourStep + 1} de {availableTourSteps.length}
+              </b>
+            </header>
+            <h2>{availableTourSteps[tourStep].title}</h2>
+            <p>{availableTourSteps[tourStep].text}</p>
+            <div
+              className="portal-tour-progress"
+              aria-hidden="true"
+              style={{
+                gridTemplateColumns: `repeat(${availableTourSteps.length}, 1fr)`,
+              }}
+            >
+              {availableTourSteps.map((step, index) => (
+                <i
+                  key={step.selector}
+                  className={index <= tourStep ? 'is-active' : ''}
+                />
+              ))}
+            </div>
+            <footer>
+              <button
+                type="button"
+                className="portal-tour-skip"
+                onClick={() => closeTour(true)}
+              >
+                Pular tutorial
+              </button>
+              <div>
+                <button
+                  type="button"
+                  className="portal-tour-back"
+                  disabled={tourStep === 0}
+                  onClick={() => setTourStep((current) => Math.max(0, current! - 1))}
+                >
+                  <ChevronLeft size={15} /> Voltar
+                </button>
+                <button
+                  type="button"
+                  className="portal-tour-next"
+                  onClick={() => {
+                    if (tourStep === availableTourSteps.length - 1) {
+                      closeTour(true)
+                    } else {
+                      setTourStep(tourStep + 1)
+                    }
+                  }}
+                >
+                  {tourStep === availableTourSteps.length - 1 ? (
+                    <>
+                      <Check size={15} /> Concluir
+                    </>
+                  ) : (
+                    <>
+                      Próximo <ChevronRight size={15} />
+                    </>
+                  )}
+                </button>
+              </div>
+            </footer>
+          </section>
+        </div>
+      )}
+
+      {celebration && (
+        <CelebrationOverlay
+          celebration={{ ...celebration, participant: '' }}
+          onClose={() => setCelebration(null)}
+        />
+      )}
 
       {pendingDecision && you && (
         <div

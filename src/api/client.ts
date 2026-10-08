@@ -145,6 +145,11 @@ export const api = {
       method: 'POST',
       body: JSON.stringify(snapshot),
     }),
+  clearBuildingMap: (building: BuildingKind) =>
+    request<{ clearedReservations: number; clearedDeclines: number }>(
+      '/api/map/clear',
+      { method: 'POST', body: JSON.stringify({ building }) },
+    ),
   saveReservation: (
     building: BuildingKind,
     apartmentId: string,
@@ -398,6 +403,11 @@ export const api = {
       body: JSON.stringify(input),
     }),
   portalView: () => request<AssociatePortalView>('/api/public/portal'),
+  portalPhoneCheck: (whatsappPhone: string) =>
+    request<{ matches: boolean }>('/api/public/portal/phone-check', {
+      method: 'POST',
+      body: JSON.stringify({ whatsappPhone }),
+    }),
   portalOffer: (
     action: 'confirm' | 'withdraw' | 'set',
     offeredInstallments?: number,

@@ -81,9 +81,11 @@ function FloorUnits({
         const selected = selectedId === id
         const hovered = hoveredId === id
         const color =
-          status !== 'none'
-            ? STATUS_BY_ID[status].color
-            : selected
+          status === 'reserved'
+            ? '#bfe8cf'
+            : status !== 'none'
+              ? STATUS_BY_ID[status].color
+              : selected
               ? SELECTED_UNIT_COLOR
               : highlightAvailability
                 ? STATUS_BY_ID.available.color
@@ -119,7 +121,7 @@ function FloorUnits({
                 transparent
                 opacity={
                   status === 'reserved'
-                    ? 0.28
+                    ? 0.34
                     : status !== 'none'
                       ? 0.48
                       : selected
@@ -164,6 +166,9 @@ function FloorUnits({
                     ? 'Selecionado'
                     : STATUS_BY_ID[status].shortLabel}
                 </span>
+                {config.extraSpaceByEnding?.[ending] && (
+                  <em>+ {config.extraSpaceByEnding[ending]}</em>
+                )}
               </div>
             </Html>
           </group>

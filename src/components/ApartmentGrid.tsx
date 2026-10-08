@@ -22,6 +22,7 @@ type Props = {
   statusFilter: ApartmentStatus | 'all'
   onSelect: (id: string) => void
   onActivate: (id: string) => void
+  onClearTest?: () => void
 }
 
 type StatusStyle = CSSProperties & { '--unit-color': string }
@@ -36,6 +37,7 @@ export function ApartmentGrid({
   statusFilter,
   onSelect,
   onActivate,
+  onClearTest,
 }: Props) {
   const floors =
     floorFilter === 'all'
@@ -57,7 +59,14 @@ export function ApartmentGrid({
     <div className="inventory-table-wrap">
       <div className="inventory-caption">
         <span>Mapa de unidades</span>
-        <span>{visibleCount} exibidas</span>
+        <span className="inventory-caption-side">
+          <span>{visibleCount} exibidas</span>
+          {onClearTest && (
+            <button type="button" onClick={onClearTest}>
+              Limpar tudo
+            </button>
+          )}
+        </span>
       </div>
       <div className="inventory-table" aria-label="Apartamentos por andar">
         <div

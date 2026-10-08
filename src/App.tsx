@@ -4,6 +4,7 @@ import {
   Check,
   ChevronDown,
   Compass,
+  Eraser,
   Eye,
   FileText,
   Filter,
@@ -191,6 +192,8 @@ function App() {
   const [anticipationBusy, setAnticipationBusy] = useState(false)
   const [turnBusy, setTurnBusy] = useState(false)
   const [anticipationError, setAnticipationError] = useState('')
+  const [clearMapOpen, setClearMapOpen] = useState(false)
+  const [clearMapBusy, setClearMapBusy] = useState(false)
 
   const refreshMap = async () => {
     const snapshot = await api.map()
@@ -433,6 +436,27 @@ function App() {
   const showNotice = (message: string) => {
     setNotice(message)
     window.setTimeout(() => setNotice(''), 2600)
+  }
+
+  const clearTestMap = async () => {
+    setClearMapBusy(true)
+    try {
+      const result = await api.clearBuildingMap(building)
+      await refreshMap()
+      setPendingId(null)
+      setClearMapOpen(false)
+      showNotice(
+        `Mapa limpo: ${result.clearedReservations} reserva${result.clearedReservations === 1 ? '' : 's'} e ${result.clearedDeclines} abdicação${result.clearedDeclines === 1 ? '' : 'ões'} removidas.`,
+      )
+    } catch (error) {
+      showNotice(
+        error instanceof Error
+          ? error.message
+          : 'Não foi possível limpar o mapa.',
+      )
+    } finally {
+      setClearMapBusy(false)
+    }
   }
 
   const selectApartment = (id: string) => {
@@ -1475,6 +1499,12 @@ function App() {
                   {selectedApartment &&
                     config.unitPositions[selectedApartment.ending].shortLabel}
                 </span>
+                {selectedApartment &&
+                  config.extraSpaceByEnding?.[selectedApartment.ending] && (
+                    <span className="selection-extra-space">
+                      + {config.extraSpaceByEnding[selectedApartment.ending]}
+                    </span>
+                  )}
               </div>
               {assignments[apartmentStorageId(building, selectedId)] && (
                 <div className="draw-summary">
@@ -1628,10 +1658,61 @@ function App() {
               statusFilter={statusFilter}
               onSelect={selectApartment}
               onActivate={requestApartment}
+              onClearTest={
+                currentUser.role === 'admin'
+                  ? () => setClearMapOpen(true)
+                  : undefined
+              }
             />
 
           </aside>
         </main>
+      )}
+
+      {clearMapOpen && (
+        <div
+          className="modal-backdrop"
+          role="presentation"
+          onMouseDown={(event) => {
+            if (event.target === event.currentTarget && !clearMapBusy) {
+              setClearMapOpen(false)
+            }
+          }}
+        >
+          <section
+            className="admin-confirm-dialog"
+            role="alertdialog"
+            aria-modal="true"
+            aria-labelledby="clear-map-title"
+          >
+            <span className="eyebrow">Somente teste</span>
+            <h3 id="clear-map-title">Limpar o mapa de {config.label}?</h3>
+            <p>
+              Todas as reservas e abdicações deste empreendimento saem agora.
+              O ranking de antecipação, o sol e as indicações do entorno
+              permanecem.
+            </p>
+            <div className="modal-actions">
+              <button
+                type="button"
+                className="secondary-button"
+                disabled={clearMapBusy}
+                onClick={() => setClearMapOpen(false)}
+              >
+                Cancelar
+              </button>
+              <button
+                type="button"
+                className="confirm-button is-danger"
+                disabled={clearMapBusy}
+                onClick={() => void clearTestMap()}
+              >
+                <Eraser size={15} />
+                {clearMapBusy ? 'Limpando…' : 'Limpar tudo'}
+              </button>
+            </div>
+          </section>
+        </div>
       )}
 
       {pendingId && (

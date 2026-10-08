@@ -1,10 +1,12 @@
 import { Suspense, useEffect, useMemo, useRef, useState } from 'react'
 import { Canvas, useFrame, type ThreeEvent, useThree } from '@react-three/fiber'
 import { Edges, Html, OrbitControls, useGLTF, useProgress } from '@react-three/drei'
+import { KeyRound } from 'lucide-react'
 import {
   CanvasTexture,
   Group,
   Mesh,
+  Vector3,
   type BufferGeometry,
   type Material,
 } from 'three'
@@ -179,9 +181,51 @@ function ApartmentVolumes({
   | 'onActivate'
 >) {
   const [hoveredId, setHoveredId] = useState('')
+  const { camera } = useThree()
+  const volumesRef = useRef<Group>(null)
+  const facingKey = useRef('')
+  const [facingIds, setFacingIds] = useState('')
+  const worldOut = useRef(new Vector3())
+  const worldCenter = useRef(new Vector3())
+  const toCamera = useRef(new Vector3())
+
+  useFrame(() => {
+    const group = volumesRef.current
+    if (!group) return
+    group.updateWorldMatrix(true, false)
+    const visible: string[] = []
+    for (const apartment of config.apartments) {
+      if ((statuses[apartment.id] ?? 'none') !== 'reserved') continue
+      const position = config.unitPositions[apartment.ending]
+      const facesX = Math.abs(position.x) >= Math.abs(position.z)
+      const outwardSign = Math.sign(facesX ? position.x : position.z) || 1
+      worldOut.current
+        .set(facesX ? outwardSign : 0, 0, facesX ? 0 : outwardSign)
+        .transformDirection(group.matrixWorld)
+      worldCenter.current
+        .set(
+          position.x,
+          apartmentFloorCenterY(config, apartment.floor),
+          position.z,
+        )
+        .applyMatrix4(group.matrixWorld)
+      toCamera.current.copy(camera.position).sub(worldCenter.current).normalize()
+      if (worldOut.current.dot(toCamera.current) > 0.45) {
+        visible.push(apartment.id)
+      }
+    }
+    visible.sort()
+    const next = visible.join(',')
+    if (next !== facingKey.current) {
+      facingKey.current = next
+      setFacingIds(next)
+    }
+  })
+
+  const facing = new Set(facingIds ? facingIds.split(',') : [])
 
   return (
-    <group>
+    <group ref={volumesRef}>
       {config.apartments.map((apartment) => {
         const position = config.unitPositions[apartment.ending]
         const status = statuses[apartment.id] ?? 'none'
@@ -217,14 +261,26 @@ function ApartmentVolumes({
         const outwardX = Math.sign(position.x) * FACADE_OVERHANG
         const outwardZ = Math.sign(position.z) * FACADE_OVERHANG
 
+        const unitCenter: [number, number, number] = [
+          position.x + outwardX,
+          apartmentFloorCenterY(config, apartment.floor),
+          position.z + outwardZ,
+        ]
+        const facesX = Math.abs(position.x) >= Math.abs(position.z)
+        const outwardSign = Math.sign(facesX ? position.x : position.z) || 1
+        const faceOffset = (facesX ? position.width : position.depth) / 2 + 0.4
+        // A janela fica um pouco ao lado do centro geométrico da unidade.
+        const windowShift = 2.4
+        const keyPosition: [number, number, number] = [
+          position.x + (facesX ? outwardSign * faceOffset : windowShift),
+          unitCenter[1],
+          position.z + (facesX ? windowShift : outwardSign * faceOffset),
+        ]
+
         return (
+          <group key={apartment.id}>
           <mesh
-            key={apartment.id}
-            position={[
-              position.x + outwardX,
-              apartmentFloorCenterY(config, apartment.floor),
-              position.z + outwardZ,
-            ]}
+            position={unitCenter}
             renderOrder={isSelected ? 12 : 10}
             onClick={(event) => {
               event.stopPropagation()
@@ -276,6 +332,20 @@ function ApartmentVolumes({
               />
             )}
           </mesh>
+          {status === 'reserved' && facing.has(apartment.id) && (
+            <Html
+              center
+              position={keyPosition}
+              distanceFactor={130}
+              zIndexRange={[20, 0]}
+              style={{ pointerEvents: 'none' }}
+            >
+              <span className="facade-key" aria-hidden="true">
+                <KeyRound size={13} />
+              </span>
+            </Html>
+          )}
+          </group>
         )
       })}
     </group>
@@ -290,6 +360,7 @@ function SelectedApartmentLabel({
   const apartment = config.apartmentById[selectedId]
   if (!apartment) return null
   const position = config.unitPositions[apartment.ending]
+  const status = statuses[selectedId] ?? 'none'
 
   return (
     <Html
@@ -306,7 +377,7 @@ function SelectedApartmentLabel({
     >
       <div className="scene-label">
         <strong>Apto {apartment.id}</strong>
-        <span>{STATUS_BY_ID[statuses[selectedId] ?? 'none'].label}</span>
+        <span>{STATUS_BY_ID[status].label}</span>
       </div>
     </Html>
   )

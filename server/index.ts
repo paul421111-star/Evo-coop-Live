@@ -20,7 +20,7 @@ import {
   offerDecisionUntil,
 } from '../src/config/anticipation'
 import { EDGE_LANDMARK_IDS } from '../src/config/surroundings'
-import { normalizeBrazilPhone } from '../src/config/collectionNotice'
+import { whatsappPhonesMatch } from '../src/config/collectionNotice'
 import { pool, transaction } from './db'
 import { runCollectionAgent, startCollectionAgent } from './whatsapp/agent'
 import { registerCobrancaRoutes } from './whatsapp/routes'
@@ -98,6 +98,11 @@ app.use(cookieParser())
 
 const hashToken = (token: string) =>
   createHash('sha256').update(token).digest('hex')
+
+const maskWhatsappPhone = (phone: string | undefined) => {
+  const digits = String(phone ?? '').replace(/\D/g, '')
+  return digits.length >= 2 ? `(**) *****-**${digits.slice(-2)}` : ''
+}
 
 const reservationData = (row: Record<string, unknown>) => ({
   ball: String(row.ball ?? ''),
@@ -338,11 +343,14 @@ app.post(
              WHERE c.building = s.building
                AND c.associate_code = e.associate_code
           )
-          AND NOT EXISTS (
-            SELECT 1
-              FROM apartment_reservations r
-             WHERE r.building = s.building
-               AND lower(trim(r.ball)) = lower(e.associate_code)
+          AND (
+            s.status = 'active'
+            OR NOT EXISTS (
+              SELECT 1
+                FROM apartment_reservations r
+               WHERE r.building = s.building
+                 AND lower(trim(r.ball)) = lower(e.associate_code)
+            )
           )
         ORDER BY CASE s.status WHEN 'active' THEN 0 ELSE 1 END, s.created_at DESC
         LIMIT 1`,
@@ -391,7 +399,11 @@ app.get(
     }
     await expireUnconfirmedOffers()
     const session = await anticipationSessionData(pool, rows[0])
-    const ranking = publicRankingEntries(session.entries)
+    const reservedByCode =
+      session.status === 'active'
+        ? await apartmentsByAssociate(pool, session.building)
+        : new Map<string, { apartmentId: string; choiceSource: string }>()
+    const ranking = publicRankingEntries(session.entries, reservedByCode)
     const current = session.entries.find((item) => item.id === identity.entryId)
     const yours = current
       ? ranking.find((entry) => entry.associateCode === current.associateCode)
@@ -400,35 +412,38 @@ app.get(
     if (current && yours) {
       const rankingOpen =
         session.status === 'draft' && current.status === 'waiting'
-      const deadline = session.confirmationDeadline
-      const decisionOpen =
-        rankingOpen &&
-        current.offerStatus !== 'withdrawn' &&
-        isOfferDecisionOpen(current.offerSelectedAt, Date.now(), deadline)
+      const remainingOffer = Math.max(
+        0,
+        30 - current.anticipatedInstallments,
+      )
+      const lockedDecision =
+        session.status === 'locked' &&
+        current.status === 'waiting' &&
+        current.offerStatus === 'pending' &&
+        current.offeredInstallments > 0
       you = {
         ...yours,
         canSetOffer:
           rankingOpen &&
           current.offerStatus !== 'withdrawn' &&
           current.offerStatus !== 'confirmed' &&
-          (deadline
-            ? isOfferDecisionOpen(current.offerSelectedAt, Date.now(), deadline)
-            : !current.offerSelectedAt ||
-              isOfferDecisionOpen(current.offerSelectedAt)),
-        canConfirm:
-          decisionOpen &&
-          current.offerStatus === 'pending' &&
-          current.offeredInstallments > 0,
-        canWithdraw: decisionOpen && current.offeredInstallments > 0,
-        offerDecisionUntil: offerDecisionUntil(
-          current.offerSelectedAt,
-          deadline,
-        ),
-        whatsappPhone: current.whatsappPhone ?? '',
+          remainingOffer >= 10,
+        canConfirm: lockedDecision,
+        canWithdraw: lockedDecision,
+        offerDecisionUntil: session.confirmationDeadline
+          ? offerDecisionUntil(
+              current.offerSelectedAt,
+              session.confirmationDeadline,
+            )
+          : null,
+        hasWhatsappPhone: Boolean(current.whatsappPhone),
+        whatsappPhoneMasked: maskWhatsappPhone(current.whatsappPhone),
       }
     }
     response.json({
       title: session.title,
+      drawGroup: session.drawGroup,
+      blockLabel: session.blockLabel,
       status: session.status,
       startsAt: session.startsAt,
       endsAt: session.endsAt,
@@ -438,6 +453,26 @@ app.get(
       confirmationDeadline: session.confirmationDeadline,
       ranking,
       you,
+    })
+  },
+)
+
+app.post(
+  '/api/public/portal/phone-check',
+  rateLimit({ windowMs: 60_000, limit: 20 }),
+  authenticateAssociate,
+  async (request: AssociateRequest, response) => {
+    const identity = request.associate
+    if (!identity) return
+    const { rows } = await pool.query(
+      `SELECT whatsapp_phone FROM anticipation_entries WHERE id = $1 AND session_id = $2`,
+      [identity.entryId, identity.sessionId],
+    )
+    response.json({
+      matches: whatsappPhonesMatch(
+        rows[0]?.whatsapp_phone ? String(rows[0].whatsapp_phone) : '',
+        String(request.body?.whatsappPhone ?? ''),
+      ),
     })
   },
 )
@@ -472,7 +507,7 @@ app.post(
         if (!entry) {
           throw new ApiError(404, 'Associado não encontrado no ranking.')
         }
-        if (entry.session_status !== 'draft' || entry.status !== 'waiting') {
+        if (entry.session_status === 'closed' || entry.status !== 'waiting') {
           throw new ApiError(
             409,
             'O ranking já foi fechado para novas antecipações.',
@@ -481,23 +516,6 @@ app.post(
         if (entry.offer_status === 'withdrawn') {
           throw new ApiError(409, 'Esta antecipação já foi recusada.')
         }
-        if (typeof request.body?.whatsappPhone === 'string') {
-          const rawPhone = String(request.body.whatsappPhone)
-          const phone =
-            rawPhone.trim() === '' ? null : normalizeBrazilPhone(rawPhone)
-          if (rawPhone.trim() && !phone) {
-            throw new ApiError(
-              400,
-              'Informe um WhatsApp válido. Fora do Brasil, comece com + e o código do país.',
-            )
-          }
-          await client.query(
-            `UPDATE anticipation_entries
-                SET whatsapp_phone = $2
-              WHERE id = $1`,
-            [entry.id, phone],
-          )
-        }
         const selectedAt = entry.offer_selected_at
           ? new Date(String(entry.offer_selected_at)).toISOString()
           : undefined
@@ -505,30 +523,56 @@ app.post(
           ? new Date(String(entry.confirmation_deadline)).toISOString()
           : null
         if (action === 'set') {
+          if (entry.session_status !== 'draft') {
+            throw new ApiError(
+              409,
+              'As antecipações foram travadas. A quantidade não pode mais ser alterada.',
+            )
+          }
           if (entry.offer_status === 'confirmed') {
             throw new ApiError(
               409,
               'A antecipação já foi confirmada e não pode ser alterada.',
             )
           }
-          if (
-            (selectedAt || deadline) &&
-            !isOfferDecisionOpen(selectedAt, Date.now(), deadline)
-          ) {
+          const anticipatedInstallments = Number(
+            entry.anticipated_installments ?? 0,
+          )
+          const remainingOffer = Math.max(0, 30 - anticipatedInstallments)
+          const offeredInstallments = Number(request.body?.offeredInstallments)
+          if (remainingOffer < 10) {
             throw new ApiError(
-              409,
-              'O prazo para alterar a antecipação já encerrou.',
+              400,
+              `Você já antecipou ${anticipatedInstallments} de 30 parcelas. Não há saldo para uma nova antecipação.`,
             )
           }
-          const offeredInstallments = Number(request.body?.offeredInstallments)
           if (
             !Number.isInteger(offeredInstallments) ||
             offeredInstallments < 10 ||
-            offeredInstallments > 30
+            offeredInstallments > remainingOffer
           ) {
             throw new ApiError(
               400,
-              'Informe de 10 a 30 parcelas para antecipar.',
+              anticipatedInstallments > 0
+                ? `Você já antecipou ${anticipatedInstallments} parcelas. Nesta rodada pode antecipar de 10 a ${remainingOffer}. O máximo total é 30.`
+                : 'Informe de 10 a 30 parcelas para antecipar.',
+            )
+          }
+          if (!entry.whatsapp_phone) {
+            throw new ApiError(
+              409,
+              'Não encontramos um celular cadastrado. Procure a cooperativa para atualizar seus dados.',
+            )
+          }
+          if (
+            !whatsappPhonesMatch(
+              String(entry.whatsapp_phone),
+              String(request.body?.whatsappPhone ?? ''),
+            )
+          ) {
+            throw new ApiError(
+              400,
+              'O número digitado não confere com o cadastro.',
             )
           }
           await client.query(
@@ -541,7 +585,16 @@ app.post(
           )
           return
         }
-        if (!isOfferDecisionOpen(selectedAt, Date.now(), deadline)) {
+        if (entry.session_status !== 'locked') {
+          throw new ApiError(
+            409,
+            'Manter ou não antecipar fica disponível depois que as antecipações forem travadas.',
+          )
+        }
+        if (
+          deadline &&
+          !isOfferDecisionOpen(selectedAt, Date.now(), deadline)
+        ) {
           throw new ApiError(
             409,
             'O prazo para manter ou recusar já encerrou.',
@@ -550,10 +603,23 @@ app.post(
         if (Number(entry.offered_installments) === 0) {
           throw new ApiError(409, 'Não há parcelas antecipadas para confirmar.')
         }
+        if (entry.offer_status === 'confirmed') {
+          throw new ApiError(409, 'Esta antecipação já foi mantida.')
+        }
         if (action === 'confirm') {
+          const anticipatedInstallments = Number(
+            entry.anticipated_installments ?? 0,
+          )
+          const offeredInstallments = Number(entry.offered_installments ?? 0)
+          if (anticipatedInstallments + offeredInstallments > 30) {
+            throw new ApiError(
+              400,
+              'O total de parcelas antecipadas não pode passar de 30.',
+            )
+          }
           await client.query(
             `UPDATE anticipation_entries
-                SET anticipated_installments = offered_installments,
+                SET anticipated_installments = anticipated_installments + offered_installments,
                     offered_installments = 0,
                     offer_status = 'confirmed'
               WHERE id = $1`,
@@ -777,7 +843,7 @@ function normalizeSlots(value: unknown) {
   return slots
 }
 
-/** Prazo do admin ou, sem ele, 24h após o associado informar as parcelas. */
+/** Prazo opcional do administrador. Sem ele, a quantidade vale até o fim do evento. */
 function normalizeConfirmationDeadline(value: unknown) {
   if (value === undefined) return undefined
   if (value === null || value === '') return null
@@ -787,7 +853,8 @@ function normalizeConfirmationDeadline(value: unknown) {
 }
 
 /**
- * Quem não confirmou até o prazo passa automaticamente para "não antecipar".
+ * Depois do travamento, quem não decidiu até o prazo do administrador
+ * fica como "não antecipar". No ranking aberto a quantidade continua salva.
  */
 async function expireUnconfirmedOffers(
   client: Pick<PoolClient, 'query'> = pool,
@@ -798,38 +865,80 @@ async function expireUnconfirmedOffers(
             offered_installments = 0
        FROM anticipation_sessions s
       WHERE e.session_id = s.id
-        AND s.status = 'draft'
+        AND s.status = 'locked'
         AND e.status = 'waiting'
         AND e.offer_status = 'pending'
         AND e.offered_installments > 0
-        AND (
-          (
-            s.confirmation_deadline IS NOT NULL
-            AND s.confirmation_deadline <= now()
-          )
-          OR (
-            s.confirmation_deadline IS NULL
-            AND e.offer_selected_at IS NOT NULL
-            AND e.offer_selected_at <= now() - interval '24 hours'
-          )
-        )`,
+        AND s.confirmation_deadline IS NOT NULL
+        AND s.confirmation_deadline <= now()`,
+  )
+}
+
+/**
+ * Ao encerrar o evento, a quantidade desta rodada entra no saldo já antecipado.
+ * Quem ficou fora das vagas também leva o valor, até o teto de 30 no próximo evento.
+ * Quem recusou fica com o saldo anterior.
+ */
+async function commitSessionOffers(
+  client: Pick<PoolClient, 'query'>,
+  sessionId: string,
+) {
+  await client.query(
+    `UPDATE anticipation_entries
+        SET anticipated_installments =
+              anticipated_installments + offered_installments,
+            offered_installments = 0,
+            offer_status = 'confirmed'
+      WHERE session_id = $1
+        AND offer_status <> 'withdrawn'`,
+    [sessionId],
+  )
+}
+
+async function apartmentsByAssociate(
+  client: Pick<PoolClient, 'query'>,
+  building: string,
+) {
+  const { rows } = await client.query(
+    `SELECT lower(trim(ball)) AS code, apartment_id, choice_source
+       FROM apartment_reservations
+      WHERE building = $1`,
+    [building],
+  )
+  return new Map(
+    rows.map((row) => [
+      String(row.code),
+      {
+        apartmentId: String(row.apartment_id),
+        choiceSource: String(row.choice_source ?? 'draw'),
+      },
+    ]),
   )
 }
 
 function publicRankingEntries(
   entries: Array<ReturnType<typeof anticipationEntryData>>,
+  reservedByCode: Map<string, { apartmentId: string; choiceSource: string }>,
 ) {
-  return entries.map((entry, index) => ({
-    position: index + 1,
-    associateCode: entry.associateCode,
-    paidInstallments: entry.paidInstallments,
-    anticipatedInstallments: entry.anticipatedInstallments,
-    offeredInstallments: entry.offeredInstallments,
-    totalInstallments: entry.totalInstallments,
-    status: entry.status,
-    offerStatus: entry.offerStatus,
-    apartmentId: entry.apartmentId,
-  }))
+  return entries.map((entry, index) => {
+    const reserved = reservedByCode.get(entry.associateCode.toLowerCase())
+    return {
+      position: index + 1,
+      associateCode: entry.associateCode,
+      paidInstallments: entry.paidInstallments,
+      anticipatedInstallments: entry.anticipatedInstallments,
+      offeredInstallments: entry.offeredInstallments,
+      totalInstallments: entry.totalInstallments,
+      status: entry.status,
+      offerStatus: entry.offerStatus,
+      apartmentId: reserved?.apartmentId,
+      choiceSource: reserved
+        ? reserved.choiceSource === 'anticipator'
+          ? 'anticipator'
+          : 'draw'
+        : undefined,
+    }
+  })
 }
 
 function purgeExpiredChallenges() {
@@ -869,12 +978,6 @@ async function authenticateAssociate(
             FROM contemplated_associates c
            WHERE c.building = s.building
              AND c.associate_code = e.associate_code
-        )
-        AND NOT EXISTS (
-          SELECT 1
-            FROM apartment_reservations r
-           WHERE r.building = s.building
-             AND lower(trim(r.ball)) = lower(e.associate_code)
         )`,
     [hashToken(token)],
   )
@@ -1130,9 +1233,11 @@ app.post('/api/anticipation-sessions', requireAdmin, async (req: AuthRequest, re
       const carried = await client.query(
         `INSERT INTO anticipation_entries
            (id, session_id, associate_code, participant, paid_installments,
-            anticipated_installments, offered_installments, document_tail)
+            anticipated_installments, offered_installments, document_tail,
+            whatsapp_phone)
          SELECT $2 || '-' || associate_code, $2, associate_code, participant,
-                paid_installments, anticipated_installments, 0, document_tail
+                paid_installments, anticipated_installments, 0, document_tail,
+                whatsapp_phone
            FROM anticipation_entries previous_entry
           WHERE previous_entry.session_id = $1
             AND NOT EXISTS (
@@ -1243,39 +1348,22 @@ app.patch('/api/anticipation-sessions/:id', requireAdmin, async (req, res) => {
           'Inclua ao menos um associado antes de iniciar.',
         )
       }
-      await client.query(
+      const closedOthers = await client.query(
         `UPDATE anticipation_sessions
             SET status = 'closed', updated_at = now()
           WHERE building = $1
             AND draw_group IS NOT DISTINCT FROM $2::varchar
             AND status = 'active'
-            AND id <> $3`,
+            AND id <> $3
+        RETURNING id`,
         [rows[0].building, rows[0].draw_group, req.params.id],
       )
+      for (const closed of closedOthers.rows) {
+        await commitSessionOffers(client, String(closed.id))
+      }
     }
     if (status === 'closed') {
-      await client.query(
-        `WITH qualified AS (
-           SELECT id
-             FROM anticipation_entries
-            WHERE session_id = $1
-            ORDER BY
-              (paid_installments + anticipated_installments + offered_installments) DESC,
-              associate_code::integer ASC
-            LIMIT $2
-         )
-         UPDATE anticipation_entries e
-            SET anticipated_installments =
-                  CASE
-                    WHEN e.offered_installments > 0 THEN e.offered_installments
-                    ELSE e.anticipated_installments
-                  END,
-                offered_installments = 0,
-                offer_status = 'confirmed'
-           FROM qualified q
-          WHERE e.id = q.id`,
-        [req.params.id, Number(rows[0].anticipator_slots)],
-      )
+      await commitSessionOffers(client, String(req.params.id))
       await client.query(
         `INSERT INTO contemplated_associates
           (building, draw_group, associate_code, apartment_id, session_id)
@@ -1352,11 +1440,12 @@ app.post(
       anticipatedInstallments > 30 ||
       !Number.isInteger(offeredInstallments) ||
       offeredInstallments < 0 ||
-      offeredInstallments > 30
+      offeredInstallments > 30 ||
+      anticipatedInstallments + offeredInstallments > 30
     ) {
       res.status(400).json({
         error:
-          'Informe contrato, 5 últimos do CPF, nome e parcelas válidas (máximo de 30).',
+          'Informe contrato, 5 últimos do CPF, nome e parcelas válidas. O total antecipado não pode passar de 30.',
       })
       return
     }
@@ -2093,6 +2182,46 @@ app.post(
   },
 )
 
+app.post(
+  '/api/map/clear',
+  requireAdmin,
+  async (request: AuthRequest, response) => {
+    const building = request.body?.building as Building
+    if (!BUILDINGS.includes(building)) {
+      response.status(400).json({ error: 'Empreendimento inválido.' })
+      return
+    }
+    const cleared = await transaction(async (client) => {
+      await client.query(
+        `UPDATE anticipation_sessions
+            SET awaiting_next = false,
+                held_storage_id = NULL,
+                updated_at = now()
+          WHERE building = $1
+            AND held_storage_id IS NOT NULL`,
+        [building],
+      )
+      const reservations = await client.query(
+        'DELETE FROM apartment_reservations WHERE building = $1',
+        [building],
+      )
+      const declines = await client.query(
+        'DELETE FROM draw_declines WHERE building = $1',
+        [building],
+      )
+      await client.query(
+        'DELETE FROM audit_events WHERE storage_id LIKE $1',
+        [`${building}:%`],
+      )
+      return {
+        clearedReservations: reservations.rowCount ?? 0,
+        clearedDeclines: declines.rowCount ?? 0,
+      }
+    })
+    response.json(cleared)
+  },
+)
+
 app.put(
   '/api/surroundings/:building/:ending',
   requireAdmin,
@@ -2510,6 +2639,9 @@ app.post(
         [building, drawGroup],
       )
       if (closedSessions.rows.length) {
+        for (const closed of closedSessions.rows) {
+          await commitSessionOffers(client, String(closed.id))
+        }
         await client.query(
           `DELETE FROM associate_portal_sessions
             WHERE session_id = ANY($1::text[])`,
