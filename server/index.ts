@@ -23,7 +23,10 @@ import { EDGE_LANDMARK_IDS } from '../src/config/surroundings'
 import { whatsappPhonesMatch } from '../src/config/collectionNotice'
 import { pool, transaction } from './db'
 import { runCollectionAgent, startCollectionAgent } from './whatsapp/agent'
-import { registerCobrancaRoutes } from './whatsapp/routes'
+import {
+  registerCobrancaRoutes,
+  registerTwilioVoiceWebhook,
+} from './whatsapp/routes'
 
 type SessionUser = {
   id: string
@@ -94,7 +97,9 @@ const mathChallenges = new Map<
 
 app.use(helmet({ contentSecurityPolicy: false }))
 app.use(express.json({ limit: '2mb' }))
+app.use(express.urlencoded({ extended: false }))
 app.use(cookieParser())
+registerTwilioVoiceWebhook(app)
 
 const hashToken = (token: string) =>
   createHash('sha256').update(token).digest('hex')
@@ -1237,7 +1242,13 @@ app.post('/api/anticipation-sessions', requireAdmin, async (req: AuthRequest, re
             whatsapp_phone)
          SELECT $2 || '-' || associate_code, $2, associate_code, participant,
                 paid_installments, anticipated_installments, 0, document_tail,
-                whatsapp_phone
+                coalesce(
+                  (SELECT phone
+                     FROM associate_phones
+                    WHERE building = $3
+                      AND associate_code = previous_entry.associate_code),
+                  whatsapp_phone
+                )
            FROM anticipation_entries previous_entry
           WHERE previous_entry.session_id = $1
             AND NOT EXISTS (
@@ -1487,8 +1498,11 @@ app.post(
       await pool.query(
         `INSERT INTO anticipation_entries
           (id, session_id, associate_code, participant, paid_installments,
-           anticipated_installments, offered_installments, document_tail)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
+           anticipated_installments, offered_installments, document_tail,
+           whatsapp_phone)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8,
+           (SELECT phone FROM associate_phones
+             WHERE building = $9 AND associate_code = $3))`,
         [
           randomUUID(),
           req.params.id,
@@ -1498,6 +1512,7 @@ app.post(
           anticipatedInstallments,
           offeredInstallments,
           documentTail,
+          session.rows[0].building,
         ],
       )
     } catch (error) {

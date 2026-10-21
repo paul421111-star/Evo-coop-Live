@@ -592,10 +592,7 @@ export function RankingBoard({
               {session.nextSource === 'anticipator' ? (
                 session.nextAnticipator ? (
                   <div>
-                    <strong>
-                      {session.nextAnticipator.associateCode} ·{' '}
-                      {session.nextAnticipator.participant}
-                    </strong>
+                    <strong>{session.nextAnticipator.associateCode}</strong>
                     <span>
                       {session.nextAnticipator.totalInstallments} parcelas no
                       total
@@ -807,7 +804,7 @@ export function RankingBoard({
               <div className="board-table">
                 <div className="board-table-head">
                   <span>#</span>
-                  <span>Associado</span>
+                  <span>Contrato</span>
                   <span>Pagas</span>
                   <span>Antecipando</span>
                   <span>Antecipadas</span>
@@ -826,8 +823,7 @@ export function RankingBoard({
                   >
                     <b>{index + 1}</b>
                     <span className="board-person">
-                      <strong>{item.participant}</strong>
-                      <small>Contrato {item.associateCode}</small>
+                      <strong>{item.associateCode}</strong>
                     </span>
                     <span className="board-installment" data-label="Pagas">
                       {item.paidInstallments}

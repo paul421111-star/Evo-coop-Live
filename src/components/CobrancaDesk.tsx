@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import {
   CheckCircle2,
   MessagesSquare,
+  Phone,
   Plus,
   QrCode,
   RefreshCw,
@@ -23,6 +24,7 @@ import {
   formatMoney,
 } from '../config/collectionNotice'
 import type { BuildingKind } from '../config/building'
+import { CobrancaCalls } from './CobrancaCalls'
 import { CobrancaConversations } from './CobrancaConversations'
 
 type Props = {
@@ -66,9 +68,9 @@ export function CobrancaDesk({ building, group }: Props) {
   const [valueDraft, setValueDraft] = useState<string | null>(null)
   const [agentNote, setAgentNote] = useState('')
   const [selectedId, setSelectedId] = useState<string | null>(null)
-  const [tab, setTab] = useState<'conversas' | 'conexao' | 'agente'>(
-    'conversas',
-  )
+  const [tab, setTab] = useState<
+    'conversas' | 'ligacoes' | 'conexao' | 'agente'
+  >('conversas')
   const [name, setName] = useState('')
   const [lances, setLances] = useState<CobrancaLance[]>([])
   const [phones, setPhones] = useState<Record<string, string>>({})
@@ -296,6 +298,15 @@ export function CobrancaDesk({ building, group }: Props) {
             <button
               type="button"
               role="tab"
+              aria-selected={tab === 'ligacoes'}
+              className={tab === 'ligacoes' ? 'is-active' : ''}
+              onClick={() => setTab('ligacoes')}
+            >
+              <Phone size={15} /> Ligações
+            </button>
+            <button
+              type="button"
+              role="tab"
               aria-selected={tab === 'conexao'}
               className={tab === 'conexao' ? 'is-active' : ''}
               onClick={() => setTab('conexao')}
@@ -326,6 +337,8 @@ export function CobrancaDesk({ building, group }: Props) {
                 <p>Adicione alguém da cobrança para ver as conversas.</p>
               </div>
             )
+          ) : tab === 'ligacoes' ? (
+            <CobrancaCalls building={building} group={group} />
           ) : tab === 'conexao' ? (
             <div className="cobranca-connection">
               {!selected ? (

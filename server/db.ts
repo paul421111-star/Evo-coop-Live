@@ -18,7 +18,11 @@ const connectionString = databaseUrl
 
 export const pool = new Pool({
   connectionString,
-  max: 10,
+  // Teto de conexões deste processo com o pooler (porta 6543).
+  // O pooler reaproveita poucas sessões reais do Postgres.
+  // As conexões só abrem conforme a demanda, e as ociosas fecham em 10s.
+  max: 1800,
+  idleTimeoutMillis: 10_000,
   ...(needsSsl ? { ssl: { rejectUnauthorized: false } } : {}),
 })
 

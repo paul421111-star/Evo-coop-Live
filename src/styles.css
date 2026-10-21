@@ -877,8 +877,8 @@ select:focus-visible {
   flex: 0 0 auto;
   width: 12px;
   height: 12px;
-  color: #009739;
-  stroke: #009739;
+  color: #dc2626;
+  stroke: #dc2626;
 }
 
 .floor-unit-label.is-reserved em {
@@ -899,13 +899,13 @@ select:focus-visible {
 .availability-legend .legend-key,
 .unit-key {
   flex: 0 0 auto;
-  color: #009739;
+  color: #dc2626;
 }
 
 .facade-key {
   display: grid;
   place-items: center;
-  color: #009739;
+  color: #dc2626;
   filter: drop-shadow(0 1px 1px rgb(0 0 0 / 55%));
 }
 
@@ -7641,6 +7641,10 @@ select:focus-visible {
 }
 
 .cobranca-chat-thread > header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
   padding: 12px 16px;
   border-bottom: 1px solid #eef2f6;
 }
@@ -7657,6 +7661,246 @@ select:focus-visible {
 .cobranca-chat-thread > header p {
   color: #64748b;
   font-size: 0.8rem;
+}
+
+.twilio-call {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  align-items: center;
+  gap: 6px 8px;
+  max-width: 300px;
+}
+
+.twilio-call select {
+  border: 1px solid #d5dee8;
+  border-radius: 9px;
+  padding: 7px 10px;
+  background: #fff;
+  font: inherit;
+}
+
+.cobranca-calls {
+  display: grid;
+  grid-template-rows: auto auto 1fr;
+  gap: 12px;
+  min-height: 0;
+  padding: 16px;
+  overflow: hidden;
+}
+
+.cobranca-calls-team {
+  display: grid;
+  gap: 10px;
+  padding: 14px;
+  border: 1px solid #e2e8f0;
+  border-radius: 14px;
+  background: #f8fafc;
+}
+
+.cobranca-calls-team.is-empty {
+  border-color: #fda4af;
+  background: #fff1f2;
+}
+
+.cobranca-calls-team h2 {
+  margin: 0;
+  font-size: 1.05rem;
+}
+
+.cobranca-calls-team header p {
+  margin: 2px 0 0;
+  color: #5b6b7c;
+  font-size: 0.88rem;
+}
+
+.cobranca-calls-team ul,
+.cobranca-calls-list ul {
+  display: grid;
+  gap: 6px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.cobranca-calls-team li {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.cobranca-calls-team label {
+  display: flex;
+  flex: 1;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 10px;
+  border: 1px solid #d7e0ea;
+  border-radius: 12px;
+  background: #fff;
+  cursor: pointer;
+}
+
+.cobranca-calls-team label:has(input:checked) {
+  border-color: #08745f;
+  background: #eaf8f3;
+}
+
+.cobranca-calls-team small,
+.cobranca-calls-list small {
+  display: block;
+  color: #64748b;
+  font-size: 0.78rem;
+}
+
+.cobranca-calls-add {
+  display: grid;
+  grid-template-columns: minmax(140px, 1fr) minmax(150px, 1fr) auto;
+  gap: 8px;
+}
+
+.cobranca-calls-add input,
+.cobranca-calls-search input {
+  width: 100%;
+  border: 1px solid #d5dee8;
+  border-radius: 10px;
+  padding: 9px 10px;
+  background: #fff;
+  font: inherit;
+}
+
+.cobranca-calls-add button {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  border: 1px solid #d5dee8;
+  border-radius: 10px;
+  padding: 8px 12px;
+  background: #fff;
+  cursor: pointer;
+}
+
+.cobranca-calls-add button:disabled {
+  cursor: not-allowed;
+  opacity: 0.5;
+}
+
+.cobranca-calls-list {
+  display: grid;
+  grid-template-rows: auto 1fr;
+  gap: 8px;
+  min-height: 0;
+}
+
+.cobranca-calls-list > header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.cobranca-calls-search {
+  position: relative;
+  flex: 1;
+  max-width: 420px;
+}
+
+.cobranca-calls-search svg {
+  position: absolute;
+  top: 50%;
+  left: 10px;
+  color: #94a3b8;
+  transform: translateY(-50%);
+}
+
+.cobranca-calls-search input {
+  padding-left: 32px;
+}
+
+.cobranca-calls-list ul {
+  align-content: start;
+  min-height: 0;
+  overflow: auto;
+}
+
+.cobranca-calls-list li {
+  display: grid;
+  grid-template-columns: minmax(160px, 1.1fr) minmax(220px, 1fr) auto;
+  align-items: center;
+  gap: 12px;
+  padding: 8px 0;
+  border-top: 1px solid #eef2f6;
+}
+
+.cobranca-calls-list form {
+  display: flex;
+  gap: 6px;
+}
+
+.cobranca-calls-list form input {
+  width: 100%;
+  border: 1px solid #d5dee8;
+  border-radius: 10px;
+  padding: 8px 10px;
+  background: #fff;
+  font: inherit;
+}
+
+.cobranca-calls-list form button {
+  border: 1px solid #d5dee8;
+  border-radius: 10px;
+  padding: 8px 12px;
+  background: #fff;
+  cursor: pointer;
+}
+
+.cobranca-calls-list form button:disabled {
+  cursor: not-allowed;
+  opacity: 0.5;
+}
+
+.twilio-call input {
+  width: 100%;
+  border: 1px solid #d5dee8;
+  border-radius: 9px;
+  padding: 7px 10px;
+  background: #fff;
+  font: inherit;
+}
+
+.twilio-call button {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  border: 1px solid #b8d8cf;
+  border-radius: 9px;
+  padding: 7px 11px;
+  background: #eaf8f3;
+  color: #08745f;
+  font-weight: 800;
+  cursor: pointer;
+}
+
+.twilio-call button.is-stop {
+  border-color: #fecdd3;
+  background: #fff1f2;
+  color: #be123c;
+}
+
+.twilio-call button:disabled {
+  cursor: not-allowed;
+  opacity: 0.5;
+}
+
+.twilio-call small {
+  flex-basis: 100%;
+  color: #08745f;
+  font-size: 0.68rem;
+  text-align: right;
+}
+
+.twilio-call small.is-error {
+  color: #be123c;
 }
 
 .cobranca-chat-new {
@@ -7785,6 +8029,7 @@ select:focus-visible {
 @media (max-width: 900px) {
   .cobranca-layout,
   .cobranca-lances li,
+  .cobranca-calls-list li,
   .cobranca-chat {
     grid-template-columns: 1fr;
   }

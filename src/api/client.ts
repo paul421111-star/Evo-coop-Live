@@ -102,6 +102,19 @@ export type CobrancaLance = {
   sentAt: string | null
 }
 
+export type CallPhone = {
+  id: string
+  name: string
+  phone: string
+}
+
+export type CallContact = {
+  id: string
+  associateCode: string
+  participant: string
+  phone: string
+}
+
 async function request<T>(url: string, options?: RequestInit): Promise<T> {
   const response = await fetch(url, {
     credentials: 'same-origin',
@@ -389,6 +402,50 @@ export const api = {
     request<{ phone: string }>(
       `/api/cobranca/entries/${encodeURIComponent(entryId)}/phone`,
       { method: 'PATCH', body: JSON.stringify({ phone }) },
+    ),
+  cobrancaVoiceStatus: () =>
+    request<{ configured: boolean; hint: string }>('/api/cobranca/voice/status'),
+  cobrancaVoiceToken: () =>
+    request<{
+      token: string
+      identity: string
+      iceServers: RTCIceServer[]
+    }>('/api/cobranca/voice/token', { method: 'POST' }),
+  cobrancaCallPhones: () =>
+    request<CallPhone[]>('/api/cobranca/voice/phones'),
+  addCobrancaCallPhone: (name: string, phone: string) =>
+    request<CallPhone>('/api/cobranca/voice/phones', {
+      method: 'POST',
+      body: JSON.stringify({ name, phone }),
+    }),
+  removeCobrancaCallPhone: (id: string) =>
+    request<void>(`/api/cobranca/voice/phones/${encodeURIComponent(id)}`, {
+      method: 'DELETE',
+    }),
+  cobrancaCallContacts: (building: BuildingKind, group: string, q: string) =>
+    request<CallContact[]>(
+      `/api/cobranca/voice/contacts?${new URLSearchParams({ building, group, q })}`,
+    ),
+  saveCobrancaContractPhone: (
+    building: BuildingKind,
+    associateCode: string,
+    phone: string,
+  ) =>
+    request<{ associateCode: string; phone: string }>(
+      `/api/cobranca/voice/contacts/${encodeURIComponent(associateCode)}/phone?${new URLSearchParams({ building })}`,
+      {
+        method: 'PATCH',
+        body: JSON.stringify({ phone }),
+      },
+    ),
+  cobrancaVoiceCall: (phone: string, agentPhoneId: string) =>
+    request<{ callSid: string }>('/api/cobranca/voice/call', {
+      method: 'POST',
+      body: JSON.stringify({ phone, agentPhoneId }),
+    }),
+  cobrancaVoiceCallStatus: (callSid: string) =>
+    request<{ status: string; to: string; duration: number }>(
+      `/api/cobranca/voice/calls/${encodeURIComponent(callSid)}`,
     ),
   portalChallenge: () =>
     request<{ id: string; question: string }>('/api/public/portal/challenge'),

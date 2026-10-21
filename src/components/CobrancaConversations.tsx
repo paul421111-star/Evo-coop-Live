@@ -9,6 +9,7 @@ import {
   formatWhatsappPhone,
   phoneFieldValue,
 } from '../config/collectionNotice'
+import { TwilioCallButton } from './TwilioCallButton'
 
 type Props = {
   lineId: string
@@ -277,12 +278,15 @@ export function CobrancaConversations({ lineId, lineName, connected }: Props) {
         ) : selected ? (
           <>
             <header>
-              <h3>{conversationTitle(selected)}</h3>
-              <p>
-                {selected.phone
-                  ? formatWhatsappPhone(selected.phone)
-                  : 'Número não identificado'}
-              </p>
+              <div>
+                <h3>{conversationTitle(selected)}</h3>
+                <p>
+                  {selected.phone
+                    ? formatWhatsappPhone(selected.phone)
+                    : 'Número não identificado'}
+                </p>
+              </div>
+              <TwilioCallButton phone={selected.phone} />
             </header>
             <div
               className="cobranca-chat-messages"
