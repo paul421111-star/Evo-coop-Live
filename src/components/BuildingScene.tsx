@@ -1,6 +1,7 @@
 import { Suspense, useEffect, useMemo, useRef, useState } from 'react'
 import { Canvas, useFrame, type ThreeEvent, useThree } from '@react-three/fiber'
 import { Edges, Html, OrbitControls, useGLTF, useProgress } from '@react-three/drei'
+import { Bloom, EffectComposer, SMAA } from '@react-three/postprocessing'
 import { KeyRound } from 'lucide-react'
 import {
   CanvasTexture,
@@ -20,6 +21,7 @@ import {
   type ApartmentStatus,
   type BuildingConfig,
 } from '../config/building'
+import { applyGrupo12Facade, GRUPO_12_DAYLIGHT } from '../config/grupo12Palette'
 
 export type BuildingView = 'perspective' | 'front' | 'back' | 'east' | 'west'
 
@@ -105,6 +107,7 @@ function BuildingModel({ config }: { config: BuildingConfig }) {
   const { scene } = useGLTF(config.towerModel)
   const model = useMemo(() => {
     const clone = scene.clone(true)
+    if (config.kind === 'even') applyGrupo12Facade(clone)
     clone.updateMatrixWorld(true)
     const geometriesByMaterial = new Map<
       string,
@@ -159,7 +162,7 @@ function BuildingModel({ config }: { config: BuildingConfig }) {
     })
     clone.add(optimizedApartments)
     return clone
-  }, [config.optimizeExteriorOnly, scene])
+  }, [config.kind, config.optimizeExteriorOnly, scene])
 
   return <primitive object={model} />
 }
@@ -239,9 +242,12 @@ function ApartmentVolumes({
             : highlightAvailability
               ? STATUS_BY_ID.available.color
               : '#38bdf8'
+        const plaster = config.kind === 'even'
         const opacity =
           status === 'reserved'
-            ? 0.16
+            ? plaster
+              ? 0.08
+              : 0.16
             : isFilled
               ? highlightAvailability
                 ? 0.5
@@ -250,8 +256,12 @@ function ApartmentVolumes({
                 ? 0.42
                 : highlightAvailability
                   ? isHovered
-                    ? 0.3
-                    : 0.17
+                    ? plaster
+                      ? 0.16
+                      : 0.3
+                    : plaster
+                      ? 0.06
+                      : 0.17
                   : isHovered
                     ? 0.12
                     : 0.001
@@ -503,6 +513,8 @@ export function BuildingScene(props: Props) {
       props.config.floorHeight / 2
     : 0
 
+  const grupo12 = props.config.kind === 'even'
+
   return (
     <Canvas
       camera={{ position: positions.perspective, fov: 38, near: 0.1, far: 700 }}
@@ -513,11 +525,18 @@ export function BuildingScene(props: Props) {
     >
       <color attach="background" args={['#08131f']} />
       <fog attach="fog" args={['#08131f', 190, 340]} />
-      <ambientLight intensity={0.55} />
-      <hemisphereLight args={['#dcefff', '#213044', 0.9]} />
+      <ambientLight intensity={grupo12 ? 0.62 : 0.55} />
+      <hemisphereLight
+        args={
+          grupo12
+            ? [GRUPO_12_DAYLIGHT.sky, GRUPO_12_DAYLIGHT.ground, 1]
+            : ['#dcefff', '#213044', 0.9]
+        }
+      />
       <directionalLight
+        color={grupo12 ? GRUPO_12_DAYLIGHT.sun : '#ffffff'}
         position={[70, 145, 85]}
-        intensity={2}
+        intensity={grupo12 ? 2.25 : 2}
         castShadow
         shadow-mapSize={[2048, 2048]}
         shadow-camera-far={300}
@@ -571,6 +590,17 @@ export function BuildingScene(props: Props) {
       </mesh>
       <gridHelper args={[180, 36, '#224357', '#142b3a']} position={[0, -0.36, 0]} />
       <CameraController view={props.view} config={props.config} />
+      {grupo12 && (
+        <EffectComposer multisampling={0} enableNormalPass={false}>
+          <SMAA />
+          <Bloom
+            intensity={0.22}
+            luminanceThreshold={0.78}
+            luminanceSmoothing={0.2}
+            mipmapBlur
+          />
+        </EffectComposer>
+      )}
     </Canvas>
   )
 }

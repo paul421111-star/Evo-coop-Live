@@ -10,6 +10,7 @@ import {
   type BuildingConfig,
   type Ending,
 } from '../config/building'
+import { applyGrupo12Facade } from '../config/grupo12Palette'
 
 type Props = {
   config: BuildingConfig
@@ -24,9 +25,13 @@ type Props = {
   onActivate: (id: string) => void
 }
 
-function FloorModel({ url }: { url: string }) {
+function FloorModel({ url, grupo12 }: { url: string; grupo12: boolean }) {
   const { scene } = useGLTF(url)
-  const model = useMemo(() => scene.clone(true), [scene])
+  const model = useMemo(() => {
+    const clone = scene.clone(true)
+    if (grupo12) applyGrupo12Facade(clone)
+    return clone
+  }, [grupo12, scene])
   return <primitive object={model} />
 }
 
@@ -202,7 +207,7 @@ export function FloorPlanScene(props: Props) {
       <directionalLight position={[20, 40, 18]} intensity={1.8} />
       <group rotation={[0, mapRotationY, 0]}>
         <Suspense fallback={null}>
-          <FloorModel url={modelUrl} />
+          <FloorModel url={modelUrl} grupo12={props.config.kind === 'even'} />
         </Suspense>
         <PlanCore
           config={props.config}
