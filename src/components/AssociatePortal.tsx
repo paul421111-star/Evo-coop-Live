@@ -30,6 +30,7 @@ import {
   phoneFieldValue,
 } from '../config/collectionNotice'
 import { AssociateDrawPanel } from './AssociateDrawPanel'
+import { Grupo12Gallery } from './Grupo12Gallery'
 import { CelebrationOverlay } from './CelebrationOverlay'
 import { SiteFooter } from './SiteFooter'
 
@@ -47,11 +48,19 @@ const PORTAL_TOUR_STEPS = [
     selector: '.portal-hero',
     title: 'Sua posição e seus números',
     text: 'Esta área mostra sua posição atual, as parcelas já pagas, as que você informou para antecipar e o total usado para ordenar o ranking.',
+    optional: true,
   },
   {
     selector: '.portal-decision',
     title: 'Informe sua antecipação',
     text: 'Escolha as parcelas desta rodada e digite o celular do cadastro. O total, somando o que já foi antecipado em eventos anteriores, não passa de 30. Enquanto o ranking estiver aberto, a lista é reordenada ao salvar.',
+    optional: true,
+  },
+  {
+    selector: '.g12-gallery',
+    title: 'Galeria do Grupo 12',
+    text: 'As fotos e plantas do Grupo 12 aparecem conforme você desce. Clique em uma imagem para ampliar.',
+    optional: true,
   },
   {
     selector: '.portal-deadline',
@@ -693,7 +702,10 @@ export function AssociatePortal() {
     you && you.position <= view.anticipatorSlots ? 'is-in-quota' : 'is-out-quota'
 
   return (
-    <main className="associate-portal is-open" ref={portalRef}>
+    <main
+      className={`associate-portal is-open${view.status === 'active' ? ' is-live' : ''}`}
+      ref={portalRef}
+    >
       {you && view.status !== 'active' && (
         <button
           type="button"
@@ -803,7 +815,7 @@ export function AssociatePortal() {
           className={`portal-grid${view.status === 'active' ? ' is-draw' : ''}`}
         >
           <div className="portal-column">
-            {you && (
+            {you && view.status !== 'active' && (
               <section className="portal-hero" ref={heroRef}>
                 <div className="portal-rank">
                   <small>Sua posição</small>
@@ -845,7 +857,7 @@ export function AssociatePortal() {
               </section>
             )}
 
-            {you && (
+            {you && view.status !== 'active' && (
               <section className="portal-card portal-decision">
                 <h2>
                   <Trophy size={16} />{' '}
@@ -1066,6 +1078,8 @@ export function AssociatePortal() {
                   )}
               </section>
             )}
+
+            {view.status === 'active' && <Grupo12Gallery />}
 
             {view.status !== 'active' && (
             <section className="portal-card portal-live">

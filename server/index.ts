@@ -2610,13 +2610,26 @@ app.post(
       return
     }
     const cleared = await transaction(async (client) => {
+      const ranking = await client.query(
+        `UPDATE anticipation_entries
+            SET status = 'waiting',
+                apartment_id = NULL
+          WHERE status IN ('selected', 'declined')
+            AND session_id IN (
+              SELECT id FROM anticipation_sessions
+               WHERE building = $1
+                 AND status <> 'closed'
+            )`,
+        [building],
+      )
       await client.query(
         `UPDATE anticipation_sessions
             SET awaiting_next = false,
                 held_storage_id = NULL,
+                next_source = 'anticipator',
                 updated_at = now()
           WHERE building = $1
-            AND held_storage_id IS NOT NULL`,
+            AND status <> 'closed'`,
         [building],
       )
       const reservations = await client.query(
@@ -2634,6 +2647,7 @@ app.post(
       return {
         clearedReservations: reservations.rowCount ?? 0,
         clearedDeclines: declines.rowCount ?? 0,
+        clearedRanking: ranking.rowCount ?? 0,
       }
     })
     response.json(cleared)

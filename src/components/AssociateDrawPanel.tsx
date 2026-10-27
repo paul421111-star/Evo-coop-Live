@@ -1,7 +1,10 @@
-import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
+import { useEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from 'react'
 import {
   Building2,
   Check,
+  KeyRound,
+  Layers3,
+  List,
   Lock,
   Maximize,
   Minimize,
@@ -12,18 +15,31 @@ import {
 import { api, type AssociateDrawSnapshot } from '../api/client'
 import {
   BUILDING_CONFIGS,
+  SELECTED_UNIT_COLOR,
+  STATUS_BY_ID,
   apartmentId,
   buildingEndingsForFloor,
   buildingFloors,
   type ApartmentStatus,
 } from '../config/building'
+import {
+  DEFAULT_EDGE_LANDMARKS,
+  DEFAULT_SOLAR_ILLUSTRATIONS,
+  SOLAR_ILLUSTRATION_BY_ID,
+  edgeLandmarksForBuilding,
+} from '../config/surroundings'
 import { floorIsComplete } from './ApartmentGrid'
+import { BuildingScene, type BuildingView } from './BuildingScene'
+import { EnvironmentOverlay } from './EnvironmentOverlay'
+import { FloorPlanScene } from './FloorPlanScene'
+import { SurroundingIcon } from './SurroundingIcon'
 import {
   describeDrawApartment,
   drawBoardStats,
   drawBoardSubtitle,
   drawUnitPresentation,
 } from './associateDrawBoard'
+import { ContractDigits } from './contractDigits'
 import { liveContractCode } from './liveBoard'
 
 const clockFormat = new Intl.DateTimeFormat('pt-BR', {
@@ -41,6 +57,22 @@ const timeFormat = new Intl.DateTimeFormat('pt-BR', {
   second: '2-digit',
 })
 
+const PRESENTATIONS = [
+  { id: 'list', label: 'Lista' },
+  { id: 'tower', label: 'Prédio 3D' },
+  { id: 'floor', label: 'Andar 3D' },
+] as const
+
+const TOWER_VIEWS: Array<{ id: BuildingView; label: string }> = [
+  { id: 'perspective', label: '3D' },
+  { id: 'front', label: 'Frente' },
+  { id: 'back', label: 'Fundos' },
+  { id: 'east', label: 'Leste' },
+  { id: 'west', label: 'Oeste' },
+]
+
+type Presentation = (typeof PRESENTATIONS)[number]['id']
+
 function sourceLabel(source: AssociateDrawSnapshot['source']) {
   if (source === 'anticipator') return 'Antecipador'
   if (source === 'draw') return 'Sorteio'
@@ -57,7 +89,11 @@ export function AssociateDrawPanel({
   const [board, setBoard] = useState<AssociateDrawSnapshot | null>(null)
   const [now, setNow] = useState(() => new Date())
   const [liveFullscreen, setLiveFullscreen] = useState(false)
+  const [callPulse, setCallPulse] = useState(0)
+  const [presentation, setPresentation] = useState<Presentation>('list')
+  const [towerView, setTowerView] = useState<BuildingView>('front')
   const liveStageRef = useRef<HTMLDivElement | null>(null)
+  const seenCode = useRef<string | null>(null)
 
   useEffect(() => {
     let cancelled = false
@@ -115,6 +151,16 @@ export function AssociateDrawPanel({
   })
   const currentCode = liveContractCode(board?.associateCode ?? '')
   const focus = board?.focusApartment ?? ''
+
+  useEffect(() => {
+    if (seenCode.current === null) {
+      seenCode.current = currentCode
+      return
+    }
+    if (seenCode.current === currentCode) return
+    seenCode.current = currentCode
+    setCallPulse((value) => value + 1)
+  }, [currentCode])
   const focusReserved = Boolean(focus && reservedById.has(focus))
   const recent = useMemo(() => {
     const events = [
@@ -141,9 +187,24 @@ export function AssociateDrawPanel({
   const endings = config?.endings ?? []
   const floors = config ? [...buildingFloors(config)].reverse() : []
   const gridColumns = `52px repeat(${Math.max(endings.length, 1)}, minmax(0, 1fr))`
+  const sceneApartment = config?.apartmentById[focus]
+  const sceneFloor = sceneApartment?.floor ?? floors[0] ?? 1
+  const sceneEndings = config ? buildingEndingsForFloor(config, sceneFloor) : []
+  const landmarks = config
+    ? edgeLandmarksForBuilding(DEFAULT_EDGE_LANDMARKS, config.kind)
+    : []
+  const activeLandmarks =
+    config && sceneApartment
+      ? DEFAULT_EDGE_LANDMARKS[config.kind]?.[sceneApartment.ending]
+      : undefined
+  const solar =
+    config && sceneApartment
+      ? (DEFAULT_SOLAR_ILLUSTRATIONS[config.kind]?.[sceneApartment.ending] ??
+        [])
+      : []
 
   return (
-    <section className="draw-board" aria-label="Painel da escolha de apartamentos">
+    <section className="draw-board is-vfx" aria-label="Painel da escolha de apartamentos">
       <header className="draw-board-top">
         <div>
           <p className="draw-board-kicker">
@@ -158,6 +219,26 @@ export function AssociateDrawPanel({
             })}
           </p>
         </div>
+        <div
+          className="draw-view-switch"
+          role="group"
+          aria-label="Versão da visualização"
+        >
+          {PRESENTATIONS.map((option) => (
+            <button
+              key={option.id}
+              type="button"
+              className={presentation === option.id ? 'active' : ''}
+              aria-pressed={presentation === option.id}
+              onClick={() => setPresentation(option.id)}
+            >
+              {option.id === 'list' && <List size={14} />}
+              {option.id === 'tower' && <Building2 size={14} />}
+              {option.id === 'floor' && <Layers3 size={14} />}
+              {option.label}
+            </button>
+          ))}
+        </div>
         <time dateTime={now.toISOString()}>{clockFormat.format(now)}</time>
       </header>
 
@@ -171,16 +252,8 @@ export function AssociateDrawPanel({
       </div>
 
       <div className="draw-board-body">
+        {presentation === 'list' ? (
         <div className="draw-grid" aria-label="Apartamentos por andar">
-          <div
-            className="draw-grid-row is-head"
-            style={{ gridTemplateColumns: gridColumns }}
-          >
-            <span>Andar</span>
-            {endings.map((ending) => (
-              <span key={ending}>Final {ending}</span>
-            ))}
-          </div>
           <div className="draw-grid-scroll">
           {floors.map((floor) => {
             const floorIds =
@@ -220,7 +293,11 @@ export function AssociateDrawPanel({
                       key={id}
                       className={`draw-unit is-${cell.state}${id === focus ? ' is-focus' : ''}`}
                     >
-                      {cell.text}
+                      {cell.state === 'current' ? (
+                        <ContractDigits code={cell.text} />
+                      ) : (
+                        cell.text
+                      )}
                     </span>
                   )
                 })}
@@ -228,7 +305,148 @@ export function AssociateDrawPanel({
             )
           })}
           </div>
+          <div
+            className="draw-finals draw-grid-row is-head"
+            style={{ gridTemplateColumns: gridColumns }}
+          >
+            <span>Andar</span>
+            {endings.map((ending) => (
+              <span key={ending}>Final {ending}</span>
+            ))}
+          </div>
         </div>
+        ) : (
+          <div className="draw-scene" aria-label={presentation === 'tower' ? 'Prédio em 3D' : 'Andar em 3D'}>
+            {presentation === 'tower' && (
+              <div className="draw-scene-views view-tabs" role="group" aria-label="Face do prédio">
+                {TOWER_VIEWS.map((option) => (
+                  <button
+                    key={option.id}
+                    type="button"
+                    className={towerView === option.id ? 'active' : ''}
+                    onClick={() => setTowerView(option.id)}
+                  >
+                    {option.label}
+                  </button>
+                ))}
+              </div>
+            )}
+            <div className="canvas-wrap">
+              {presentation === 'tower' && config ? (
+                <div className="tower-view">
+                  <BuildingScene
+                    config={config}
+                    statuses={statuses}
+                    selectedId={sceneApartment?.id ?? ''}
+                    activeStatus={statuses[sceneApartment?.id ?? ''] ?? 'none'}
+                    view={towerView}
+                    showFloorScale
+                    highlightAvailability
+                    sceneTheme="dark"
+                    onSelect={() => undefined}
+                    onActivate={() => undefined}
+                  />
+                  <div className="orientation-badge">
+                    <span>N</span>
+                    <i />
+                  </div>
+                  <div className="scene-counter">
+                    <Layers3 size={15} />
+                    <span>{config.floorCount} andares</span>
+                    <b>·</b>
+                    <span>{config.apartments.length} unidades</span>
+                  </div>
+                  <div className="availability-legend">
+                    <span>
+                      <i
+                        style={
+                          {
+                            '--legend-color':
+                              config.kind === 'even'
+                                ? '#8FCB9F'
+                                : STATUS_BY_ID.available.color,
+                          } as CSSProperties
+                        }
+                      />
+                      Disponível
+                    </span>
+                    <span>
+                      <i style={{ '--legend-color': SELECTED_UNIT_COLOR } as CSSProperties} />
+                      Selecionado
+                    </span>
+                    <span>
+                      <KeyRound size={12} className="legend-key" aria-hidden="true" />
+                      <i style={{ '--legend-color': STATUS_BY_ID.reserved.color } as CSSProperties} />
+                      Reservado
+                    </span>
+                  </div>
+                </div>
+              ) : config?.floorModel ? (
+                <div className="floor-plan-view">
+                  <div className="floor-plan-heading">
+                    <div>
+                      <span>Planta ampliada</span>
+                      <strong>
+                        {sceneFloor === 0 ? 'Térreo' : `${sceneFloor}º andar`}
+                      </strong>
+                    </div>
+                    <small>
+                      {sceneApartment
+                        ? `Apartamento ${sceneApartment.id}`
+                        : 'Aguardando a escolha'}
+                    </small>
+                  </div>
+                  <FloorPlanScene
+                    config={config}
+                    floor={sceneFloor}
+                    selectedId={sceneApartment?.id ?? ''}
+                    statuses={statuses}
+                    modelUrl={
+                      sceneFloor === 0 && config.groundFloorModel
+                        ? config.groundFloorModel
+                        : config.floorModel
+                    }
+                    endings={sceneEndings}
+                    highlightAvailability
+                    sceneTheme="dark"
+                    onSelect={() => undefined}
+                    onActivate={() => undefined}
+                  />
+                  <EnvironmentOverlay
+                    variant="plan"
+                    showLabels={landmarks.length > 0}
+                    landmarks={landmarks}
+                    activeLandmarks={activeLandmarks}
+                  />
+                  {solar.length > 0 && (
+                    <div className="canvas-solar-stack">
+                      {solar.map((illustration) => {
+                        const option = SOLAR_ILLUSTRATION_BY_ID[illustration]
+                        return (
+                          <figure
+                            className="solar-illustration-card canvas-solar-card"
+                            key={illustration}
+                          >
+                            <img src={option.image} alt={option.label} />
+                            <figcaption>
+                              <SurroundingIcon icon={option.icon} size={13} />
+                              <span>
+                                <b>{option.label}</b>
+                                <small>Final {sceneApartment?.ending}</small>
+                              </span>
+                            </figcaption>
+                          </figure>
+                        )
+                      })}
+                    </div>
+                  )}
+                </div>
+              ) : (
+                <p className="draw-scene-empty">A planta 3D deste bloco ainda não está disponível.</p>
+              )}
+            </div>
+          </div>
+        )}
 
         <div className="draw-live">
             {embedSrc ? (
@@ -275,7 +493,9 @@ export function AssociateDrawPanel({
             <span className={`draw-source is-${board?.source ?? 'idle'}`}>
               {sourceLabel(board?.source ?? 'idle')}
             </span>
-            <strong>{currentCode || 'Aguardando'}</strong>
+            <strong key={callPulse} className={callPulse > 0 ? 'is-arrived' : ''}>
+              {currentCode ? <ContractDigits code={currentCode} /> : 'Aguardando'}
+            </strong>
             <div className={`draw-focus${focus ? '' : ' is-empty'}`}>
               <b>{focus || '—'}</b>
               <span>
@@ -311,7 +531,9 @@ export function AssociateDrawPanel({
               <ol>
                 {recent.map((item) => (
                   <li key={item.id}>
-                    <b>{item.code}</b>
+                    <b>
+                      <ContractDigits code={item.code} />
+                    </b>
                     <span>
                       {item.apartmentId ? `Apto ${item.apartmentId}` : 'Abdicou'}
                     </span>
@@ -327,21 +549,20 @@ export function AssociateDrawPanel({
               </ol>
             )}
           </article>
-
-          <article className="draw-progress">
-            <h3>Progresso · {stats.percent}%</h3>
-            <div
-              className="draw-meter"
-              aria-label={`${stats.percent}% definido`}
-            >
-              <span style={{ width: `${stats.percent}%` }} />
-            </div>
-            <p>
-              {stats.defined} definidos · {stats.declined} abdicados ·{' '}
-              {stats.available} disponíveis
-            </p>
-          </article>
         </aside>
+        <article className="draw-progress">
+          <h3>Progresso · {stats.percent}%</h3>
+          <div
+            className="draw-meter"
+            aria-label={`${stats.percent}% definido`}
+          >
+            <span style={{ width: `${stats.percent}%` }} />
+          </div>
+          <p>
+            {stats.defined} definidos · {stats.declined} abdicados ·{' '}
+            {stats.available} disponíveis
+          </p>
+        </article>
       </div>
     </section>
   )

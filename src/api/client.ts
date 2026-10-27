@@ -217,7 +217,11 @@ export const api = {
       body: JSON.stringify(snapshot),
     }),
   clearBuildingMap: (building: BuildingKind) =>
-    request<{ clearedReservations: number; clearedDeclines: number }>(
+    request<{
+      clearedReservations: number
+      clearedDeclines: number
+      clearedRanking: number
+    }>(
       '/api/map/clear',
       { method: 'POST', body: JSON.stringify({ building }) },
     ),

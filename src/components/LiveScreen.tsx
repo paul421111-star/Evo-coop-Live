@@ -17,6 +17,7 @@ import { BuildingScene, type BuildingView } from './BuildingScene'
 import { EnvironmentOverlay } from './EnvironmentOverlay'
 import { FloorPlanScene } from './FloorPlanScene'
 import { SurroundingIcon } from './SurroundingIcon'
+import { ContractDigits } from './contractDigits'
 import { liveContractCode } from './liveBoard'
 
 const VIEWS = new Set<BuildingView>([
@@ -113,7 +114,9 @@ export function LiveScreen({ onLogout }: Props) {
         </div>
         <div className="live-plaque" aria-live="polite">
           <span>Sorteio</span>
-          <strong>{code || 'Aguardando'}</strong>
+          <strong>
+            {code ? <ContractDigits code={code} /> : 'Aguardando'}
+          </strong>
         </div>
         <button type="button" className="ghost-button" onClick={onLogout}>
           <LogOut size={16} /> Sair

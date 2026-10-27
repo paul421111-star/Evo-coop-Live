@@ -33,8 +33,16 @@ afterEach(() => cleanup())
 describe('AssociateDrawPanel', () => {
   it('mostra o contrato da vez e o apartamento definido, sem nome', async () => {
     render(<AssociateDrawPanel />)
-    expect((await screen.findAllByText('120112')).length).toBe(2)
-    expect(screen.getByText('Antecipador')).toBeTruthy()
+    expect(await screen.findByText('Antecipador')).toBeTruthy()
+    expect(document.querySelector('.draw-current strong')?.textContent).toBe(
+      '120112',
+    )
+    expect(document.querySelector('.draw-current .is-ball')?.textContent).toBe(
+      '0112',
+    )
+    expect(
+      document.querySelector('.draw-unit.is-current .is-ball')?.textContent,
+    ).toBe('0112')
     expect(document.querySelector('.draw-unit.is-current')?.textContent).toBe(
       '120112',
     )
@@ -42,5 +50,8 @@ describe('AssociateDrawPanel', () => {
       '120164',
     )
     expect(screen.queryByText(/Daniel/)).toBeNull()
+    expect(screen.getByRole('button', { name: 'Lista' })).toBeTruthy()
+    expect(screen.getByRole('button', { name: 'Prédio 3D' })).toBeTruthy()
+    expect(screen.getByRole('button', { name: 'Andar 3D' })).toBeTruthy()
   })
 })

@@ -523,10 +523,11 @@ function App() {
     try {
       const result = await api.clearBuildingMap(building)
       await refreshMap()
+      await refreshAnticipation()
       setPendingId(null)
       setClearMapOpen(false)
       showNotice(
-        `Mapa limpo: ${result.clearedReservations} reserva${result.clearedReservations === 1 ? '' : 's'} e ${result.clearedDeclines} abdicação${result.clearedDeclines === 1 ? '' : 'ões'} removidas.`,
+        `Mapa e ranking limpos: ${result.clearedReservations} reserva${result.clearedReservations === 1 ? '' : 's'} e ${result.clearedRanking} situação${result.clearedRanking === 1 ? '' : 'ões'} do sorteio removidas.`,
       )
     } catch (error) {
       showNotice(
@@ -1913,9 +1914,9 @@ function App() {
             <span className="eyebrow">Somente teste</span>
             <h3 id="clear-map-title">Limpar o mapa de {config.label}?</h3>
             <p>
-              Todas as reservas e abdicações deste empreendimento saem agora.
-              O ranking de antecipação, o sol e as indicações do entorno
-              permanecem.
+              As reservas, as abdicações e a situação do sorteio no ranking
+              saem agora. As parcelas e a ordem dos associados permanecem.
+              O sol e as indicações do entorno também ficam.
             </p>
             <div className="modal-actions">
               <button
