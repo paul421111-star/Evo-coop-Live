@@ -666,9 +666,9 @@ export function RankingBoard({
             <p className="board-hint">
               Ordena pelo total de parcelas. Em caso de empate, o menor número
               de contrato fica na frente. As{' '}
-              <b>{session.anticipatorSlots} primeiras posições</b> aparecem
-              destacadas: são os antecipadores. Da linha seguinte para baixo
-              ficam fora da antecipação.
+              <b>{session.anticipatorSlots} primeiras posições</b> vão para a
+              live. Da linha seguinte para baixo ficam os suplentes, somente no
+              ranking.
             </p>
 
             {admin && (

@@ -27,6 +27,16 @@ type Props = {
 
 type StatusStyle = CSSProperties & { '--unit-color': string }
 
+export function floorIsComplete(
+  apartmentIds: string[],
+  statuses: Record<string, ApartmentStatus>,
+) {
+  return (
+    apartmentIds.length > 0 &&
+    apartmentIds.every((id) => statuses[id] === 'reserved')
+  )
+}
+
 export function ApartmentGrid({
   config,
   statuses,
@@ -81,13 +91,21 @@ export function ApartmentGrid({
           ))}
         </div>
 
-        {floors.map((floor) => (
-          <div
-            className="grid-row"
-            key={floor}
-            style={{ gridTemplateColumns: columns }}
-          >
-            <span className="floor-number">
+        {floors.map((floor) => {
+          const floorIds = config.apartments
+            .filter((apartment) => apartment.floor === floor)
+            .map((apartment) => apartment.id)
+          const complete = floorIsComplete(floorIds, statuses)
+          return (
+            <div
+              className="grid-row"
+              key={floor}
+              style={{ gridTemplateColumns: columns }}
+            >
+            <span
+              className={`floor-number ${complete ? 'is-complete' : ''}`}
+              title={complete ? 'Andar completo' : undefined}
+            >
               {floor === 0 ? 'T' : `${String(floor).padStart(2, '0')}º`}
             </span>
             {endings.map((ending) => {
@@ -146,8 +164,9 @@ export function ApartmentGrid({
                 </button>
               )
             })}
-          </div>
-        ))}
+            </div>
+          )
+        })}
       </div>
     </div>
   )

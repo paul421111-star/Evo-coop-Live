@@ -2,6 +2,7 @@ import { Suspense, useMemo, useState } from 'react'
 import { Canvas, type ThreeEvent } from '@react-three/fiber'
 import { Edges, Html, OrbitControls, useGLTF } from '@react-three/drei'
 import { KeyRound } from 'lucide-react'
+import { balconyKeyOffset } from './balconyKey'
 import {
   SELECTED_UNIT_COLOR,
   STATUS_BY_ID,
@@ -21,6 +22,7 @@ type Props = {
   endings?: Ending[]
   overlayY?: number
   highlightAvailability?: boolean
+  sceneTheme?: 'dark' | 'light'
   onSelect: (id: string) => void
   onActivate: (id: string) => void
 }
@@ -85,16 +87,19 @@ function FloorUnits({
         const status = statuses[id] ?? 'none'
         const selected = selectedId === id
         const hovered = hoveredId === id
-        const color =
-          status === 'reserved'
-            ? '#bfe8cf'
-            : status !== 'none'
-              ? STATUS_BY_ID[status].color
-              : selected
+        const reserved = status === 'reserved'
+        const color = reserved
+          ? selected
+            ? SELECTED_UNIT_COLOR
+            : '#e8eef4'
+          : status === 'none'
+            ? selected
               ? SELECTED_UNIT_COLOR
               : highlightAvailability
                 ? STATUS_BY_ID.available.color
                 : '#38bdf8'
+            : STATUS_BY_ID[status].color
+        const balcony = balconyKeyOffset(position)
 
         return (
           <group key={id}>
@@ -125,8 +130,10 @@ function FloorUnits({
                 color={color}
                 transparent
                 opacity={
-                  status === 'reserved'
-                    ? 0.34
+                  reserved
+                    ? selected
+                      ? 0.46
+                      : 0
                     : status !== 'none'
                       ? 0.48
                       : selected
@@ -149,6 +156,21 @@ function FloorUnits({
                 />
               )}
             </mesh>
+            {reserved && (
+              <Html
+                center
+                position={[
+                  position.x + balcony.x,
+                  overlayY + 0.5,
+                  position.z + balcony.z,
+                ]}
+                style={{ pointerEvents: 'none' }}
+              >
+                <span className="facade-key" aria-hidden="true">
+                  <KeyRound size={14} />
+                </span>
+              </Html>
+            )}
             <Html
               center
               position={[position.x, overlayY + 0.43, position.z]}
@@ -156,16 +178,11 @@ function FloorUnits({
             >
               <div
                 className={`floor-unit-label ${selected ? 'is-selected' : ''} ${
-                  status === 'reserved' ? 'is-reserved' : ''
+                  reserved ? 'is-reserved' : ''
                 }`}
                 style={{ '--unit-color': color } as React.CSSProperties}
               >
-                <strong>
-                  {status === 'reserved' && (
-                    <KeyRound size={12} aria-hidden="true" />
-                  )}
-                  {id}
-                </strong>
+                <strong>{id}</strong>
                 <span>
                   {selected && status === 'none'
                     ? 'Selecionado'
@@ -201,7 +218,10 @@ export function FloorPlanScene(props: Props) {
       dpr={[1, 1.5]}
       gl={{ antialias: true, alpha: false }}
     >
-      <color attach="background" args={['#0b1824']} />
+      <color
+        attach="background"
+        args={[props.sceneTheme === 'light' ? '#e7eef4' : '#0b1824']}
+      />
       <ambientLight intensity={1.1} />
       <hemisphereLight args={['#ffffff', '#26394a', 1.4]} />
       <directionalLight position={[20, 40, 18]} intensity={1.8} />

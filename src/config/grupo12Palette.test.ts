@@ -21,6 +21,14 @@ describe('fachada do Grupo 12', () => {
       GRUPO_12_FACADE.glass.slice(1).toLowerCase(),
     )
     expect(original.color.getHexString()).toBe('29524d')
+    const paint = new MeshStandardMaterial({ name: 'Fachada_branca' })
+    const wall = new Mesh()
+    wall.material = paint
+    root.add(wall)
+    applyGrupo12Facade(root)
+    const painted = wall.material as MeshStandardMaterial
+    expect(painted.color.r).toBeGreaterThan(0.9)
+    expect(next.color.b).toBeGreaterThan(next.color.r)
   })
 
   it('não mexe em materiais de dentro do apartamento', () => {

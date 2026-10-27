@@ -33,6 +33,40 @@ import type {
 } from '../store/apartments'
 import type { IssueInput, ProductIssue } from '../config/issues'
 
+export type LiveBoard = {
+  building: BuildingKind
+  drawGroup: string
+  associateCode: string
+  focusApartment: string
+  view: 'perspective' | 'front' | 'back' | 'east' | 'west'
+  sceneTheme: 'dark' | 'light'
+  highlightAvailability: boolean
+  updatedAt: string
+}
+
+export type AssociateDrawSnapshot = {
+  building: BuildingKind
+  drawGroup: string
+  blockLabel: string
+  title: string
+  status: string
+  source: 'anticipator' | 'draw' | 'idle'
+  associateCode: string
+  focusApartment: string
+  updatedAt: string | null
+  reserved: Array<{
+    apartmentId: string
+    code: string
+    source: 'anticipator' | 'draw'
+    at: string
+  }>
+  declined: Array<{
+    code: string
+    source: 'anticipator' | 'draw'
+    at: string
+  }>
+}
+
 export type MapSnapshot = {
   statuses: Partial<ApartmentStatuses>
   assignments: ApartmentAssignments
@@ -115,6 +149,16 @@ export type CallContact = {
   phone: string
 }
 
+export type CallRecording = {
+  id: string
+  associateCode: string
+  phone: string
+  callSid: string
+  recordingSid: string
+  durationSeconds: number
+  createdAt: string
+}
+
 async function request<T>(url: string, options?: RequestInit): Promise<T> {
   const response = await fetch(url, {
     credentials: 'same-origin',
@@ -153,6 +197,20 @@ export const api = {
       method: 'DELETE',
     }),
   map: () => request<MapSnapshot>('/api/map'),
+  liveBoard: () => request<LiveBoard | null>('/api/live/board'),
+  publishLiveBoard: (input: {
+    building: BuildingKind
+    drawGroup: string
+    associateCode: string
+    focusApartment: string
+    view: LiveBoard['view']
+    sceneTheme: LiveBoard['sceneTheme']
+    highlightAvailability: boolean
+  }) =>
+    request<LiveBoard>('/api/live/board', {
+      method: 'PUT',
+      body: JSON.stringify(input),
+    }),
   importMap: (snapshot: MapSnapshot) =>
     request<{ ok: true }>('/api/map/import', {
       method: 'POST',
@@ -298,6 +356,14 @@ export const api = {
         body: JSON.stringify({ confirmationDeadline }),
       },
     ),
+  setAnticipationPeriod: (id: string, startsAt: string, endsAt: string) =>
+    request<AnticipationSession>(
+      `/api/anticipation-sessions/${encodeURIComponent(id)}`,
+      {
+        method: 'PATCH',
+        body: JSON.stringify({ startsAt, endsAt }),
+      },
+    ),
   addAnticipationEntry: (sessionId: string, input: AnticipationEntryInput) =>
     request<AnticipationSession>(
       `/api/anticipation-sessions/${encodeURIComponent(sessionId)}/entries`,
@@ -404,7 +470,9 @@ export const api = {
       { method: 'PATCH', body: JSON.stringify({ phone }) },
     ),
   cobrancaVoiceStatus: () =>
-    request<{ configured: boolean; hint: string }>('/api/cobranca/voice/status'),
+    request<{ configured: boolean; hint: string; recordCalls: boolean }>(
+      '/api/cobranca/voice/status',
+    ),
   cobrancaVoiceToken: () =>
     request<{
       token: string
@@ -447,6 +515,30 @@ export const api = {
     request<{ status: string; to: string; duration: number }>(
       `/api/cobranca/voice/calls/${encodeURIComponent(callSid)}`,
     ),
+  saveCallRecordingSetting: (enabled: boolean) =>
+    request<{ enabled: boolean }>('/api/cobranca/voice/recording', {
+      method: 'PATCH',
+      body: JSON.stringify({ enabled }),
+    }),
+  cobrancaCallRecordings: (building: string, codes: string[]) =>
+    request<CallRecording[]>(
+      `/api/cobranca/voice/recordings?building=${encodeURIComponent(building)}&codes=${encodeURIComponent(codes.join(','))}`,
+    ),
+  saveCallRecording: (input: {
+    building: string
+    associateCode: string
+    phone: string
+    callSid: string
+  }) =>
+    request<CallRecording>('/api/cobranca/voice/recordings', {
+      method: 'POST',
+      body: JSON.stringify(input),
+    }),
+  syncCallRecording: (callSid: string) =>
+    request<CallRecording>(
+      `/api/cobranca/voice/recordings/${encodeURIComponent(callSid)}/sync`,
+      { method: 'POST' },
+    ),
   portalChallenge: () =>
     request<{ id: string; question: string }>('/api/public/portal/challenge'),
   portalAccess: (input: {
@@ -455,11 +547,30 @@ export const api = {
     challengeId: string
     answer: number
   }) =>
-    request<{ ok: true }>('/api/public/portal/access', {
+    request<{
+      confirmationId: string
+      channels: Array<{
+        channel: 'phone' | 'email'
+        label: string
+        available: boolean
+        mask: string
+      }>
+    }>('/api/public/portal/access', {
       method: 'POST',
       body: JSON.stringify(input),
     }),
+  portalConfirm: (
+    confirmationId: string,
+    channel: 'phone' | 'email',
+    value: string,
+  ) =>
+    request<{ ok: true }>('/api/public/portal/confirm', {
+      method: 'POST',
+      body: JSON.stringify({ confirmationId, channel, value }),
+    }),
   portalView: () => request<AssociatePortalView>('/api/public/portal'),
+  portalDrawBoard: () =>
+    request<AssociateDrawSnapshot>('/api/public/portal/board'),
   portalPhoneCheck: (whatsappPhone: string) =>
     request<{ matches: boolean }>('/api/public/portal/phone-check', {
       method: 'POST',

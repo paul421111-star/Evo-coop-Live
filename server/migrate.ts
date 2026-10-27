@@ -13,7 +13,7 @@ CREATE TABLE IF NOT EXISTS app_users (
   id text PRIMARY KEY,
   username varchar(80) NOT NULL,
   password_hash text NOT NULL,
-  role varchar(20) NOT NULL CHECK (role IN ('admin', 'operator_sede', 'operator_obra')),
+  role varchar(20) NOT NULL CHECK (role IN ('admin', 'operator_sede', 'operator_obra', 'live')),
   created_at timestamptz NOT NULL DEFAULT now()
 );
 CREATE UNIQUE INDEX IF NOT EXISTS app_users_username_lower_idx
@@ -22,7 +22,19 @@ CREATE UNIQUE INDEX IF NOT EXISTS app_users_username_lower_idx
 ALTER TABLE app_users DROP CONSTRAINT IF EXISTS app_users_role_check;
 UPDATE app_users SET role = 'operator_sede' WHERE role = 'operator';
 ALTER TABLE app_users ADD CONSTRAINT app_users_role_check
-  CHECK (role IN ('admin', 'operator_sede', 'operator_obra'));
+  CHECK (role IN ('admin', 'operator_sede', 'operator_obra', 'live'));
+
+CREATE TABLE IF NOT EXISTS live_board (
+  building varchar(20) NOT NULL,
+  draw_group varchar(8) NOT NULL,
+  associate_code varchar(6) NOT NULL DEFAULT '',
+  focus_apartment varchar(8) NOT NULL DEFAULT '',
+  view varchar(20) NOT NULL DEFAULT 'perspective',
+  scene_theme varchar(8) NOT NULL DEFAULT 'dark',
+  highlight_availability boolean NOT NULL DEFAULT true,
+  updated_at timestamptz NOT NULL DEFAULT now(),
+  PRIMARY KEY (building, draw_group)
+);
 
 CREATE TABLE IF NOT EXISTS app_sessions (
   token_hash text PRIMARY KEY,
@@ -263,6 +275,9 @@ ALTER TABLE anticipation_sessions
   ADD COLUMN IF NOT EXISTS closed_at timestamptz;
 ALTER TABLE anticipation_sessions
   ADD COLUMN IF NOT EXISTS confirmation_deadline timestamptz;
+
+ALTER TABLE anticipation_sessions
+  ADD COLUMN IF NOT EXISTS locked_at timestamptz;
 ALTER TABLE anticipation_sessions
   ADD COLUMN IF NOT EXISTS awaiting_next boolean NOT NULL DEFAULT false;
 ALTER TABLE anticipation_sessions
@@ -312,6 +327,23 @@ CREATE TABLE IF NOT EXISTS collection_agent_settings (
 INSERT INTO collection_agent_settings (id)
 VALUES (true)
 ON CONFLICT DO NOTHING;
+
+ALTER TABLE collection_agent_settings
+  ADD COLUMN IF NOT EXISTS record_calls boolean NOT NULL DEFAULT true;
+
+CREATE TABLE IF NOT EXISTS collection_call_recordings (
+  id text PRIMARY KEY,
+  building varchar(40) NOT NULL,
+  associate_code varchar(6) NOT NULL CHECK (associate_code ~ '^[0-9]{6}$'),
+  phone varchar(20) NOT NULL,
+  call_sid varchar(64) NOT NULL UNIQUE,
+  recording_sid varchar(64),
+  duration_seconds integer,
+  created_by text,
+  created_at timestamptz NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS collection_call_recordings_contract
+  ON collection_call_recordings (building, associate_code, created_at DESC);
 
 CREATE TABLE IF NOT EXISTS whatsapp_conversations (
   id text PRIMARY KEY,
@@ -406,9 +438,16 @@ CREATE TABLE IF NOT EXISTS associate_phones (
   building varchar(40) NOT NULL,
   associate_code varchar(6) NOT NULL CHECK (associate_code ~ '^[0-9]{6}$'),
   phone varchar(20),
+  email varchar(180),
   updated_at timestamptz NOT NULL DEFAULT now(),
   PRIMARY KEY (building, associate_code)
 );
+
+ALTER TABLE associate_phones
+  ADD COLUMN IF NOT EXISTS email varchar(180);
+
+ALTER TABLE anticipation_entries
+  ADD COLUMN IF NOT EXISTS email varchar(180);
 
 CREATE TABLE IF NOT EXISTS collection_call_phones (
   id text PRIMARY KEY,

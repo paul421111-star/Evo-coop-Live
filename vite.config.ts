@@ -1,6 +1,13 @@
+import basicSsl from '@vitejs/plugin-basic-ssl'
 import { defineConfig } from 'vite'
 
 export default defineConfig({
+  plugins: [
+    basicSsl({
+      name: 'localhost',
+      domains: ['localhost', '127.0.0.1', '10.10.10.17'],
+    }),
+  ],
   server: {
     // As credenciais do WhatsApp (Baileys) viram milhares de arquivos em
     // data/whatsapp; vigiar essa pasta deixa o servidor de desenvolvimento lento.

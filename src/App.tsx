@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState, type CSSProperties } from 'react'
 import {
   Building2,
+  CalendarClock,
   Check,
   ChevronDown,
   Compass,
@@ -25,6 +26,7 @@ import {
   X,
 } from 'lucide-react'
 import { getCurrentUser, logout, type AppUser } from './auth/localAuth'
+import { LiveScreen } from './components/LiveScreen'
 import { api } from './api/client'
 import { AdminPanel } from './components/AdminPanel'
 import { AnticipationPanel } from './components/AnticipationPanel'
@@ -40,7 +42,7 @@ import { CobrancaDesk } from './components/CobrancaDesk'
 import { IssueDesk } from './components/IssueDesk'
 import { SiteFooter } from './components/SiteFooter'
 import { SurroundingIcon } from './components/SurroundingIcon'
-import { TurnSign } from './components/TurnSign'
+import { DrawnBallField, TurnSign } from './components/TurnSign'
 import {
   BUILDING_CONFIGS,
   SELECTED_UNIT_COLOR,
@@ -130,7 +132,8 @@ function App() {
 
   const [authReady, setAuthReady] = useState(false)
   const [currentUser, setCurrentUser] = useState<AppUser | null>(null)
-  const canViewAnticipation = currentUser?.role !== 'operator_obra'
+  const canViewAnticipation =
+    currentUser?.role === 'admin' || currentUser?.role === 'operator_sede'
   const [eventWorkspace, setEventWorkspace] =
     useState<EventWorkspace | null>(null)
   const [confirmEventSwitch, setConfirmEventSwitch] = useState(false)
@@ -182,6 +185,11 @@ function App() {
   const [showEnvironment, setShowEnvironment] = useState(true)
   const [showFloorScale, setShowFloorScale] = useState(true)
   const [showAvailability, setShowAvailability] = useState(true)
+  const [sceneTheme, setSceneTheme] = useState<'dark' | 'light'>(() =>
+    window.localStorage.getItem('evo-coop-scene-theme') === 'light'
+      ? 'light'
+      : 'dark',
+  )
   const [declines, setDeclines] = useState<DrawDecline[]>([])
   const [declineError, setDeclineError] = useState('')
   const [declineBusy, setDeclineBusy] = useState(false)
@@ -190,6 +198,9 @@ function App() {
   const [anticipationSession, setAnticipationSession] =
     useState<AnticipationSession | null>(null)
   const [anticipationBusy, setAnticipationBusy] = useState(false)
+  const [periodOpen, setPeriodOpen] = useState(false)
+  const [periodStart, setPeriodStart] = useState('')
+  const [periodEnd, setPeriodEnd] = useState('')
   const [turnBusy, setTurnBusy] = useState(false)
   const [anticipationError, setAnticipationError] = useState('')
   const [clearMapOpen, setClearMapOpen] = useState(false)
@@ -310,6 +321,40 @@ function App() {
   const selectedApartment = config.apartmentById[selectedId]
   const drawGroups = drawGroupsForBuilding(building)
   const activeDrawGroup = activeDrawGroups[building]
+  const drawnAssociateCode =
+    anticipationSession?.status === 'active' &&
+    anticipationSession.nextSource === 'draw'
+      ? activeDrawGroup
+        ? buildAssociateCode(activeDrawGroup, drawBall)
+        : drawBall.trim() || null
+      : null
+  const liveAssociateCode =
+    anticipationSession?.status === 'active' &&
+    anticipationSession.nextSource === 'anticipator'
+      ? (anticipationSession.nextAnticipator?.associateCode ?? '')
+      : (drawnAssociateCode ?? '')
+  const drawnName =
+    anticipationSession?.entries.find(
+      (entry) => entry.associateCode === drawnAssociateCode,
+    )        ?.participant ?? ''
+  const lockedCurrentChoice =
+    !pendingExisting &&
+    anticipationSession?.status === 'active' &&
+    (anticipationSession.nextSource === 'anticipator' ||
+      anticipationSession.nextSource === 'draw')
+  const setDrawnBall = (value: string) => {
+    const ball = activeDrawGroup
+      ? value.replace(/\D/g, '').slice(0, 4)
+      : value
+    setDrawBall(ball)
+    const code = activeDrawGroup
+      ? buildAssociateCode(activeDrawGroup, ball)
+      : ball.trim()
+    setParticipant(
+      anticipationSession?.entries.find((entry) => entry.associateCode === code)
+        ?.participant ?? '',
+    )
+  }
   const refreshAnticipation = async () => {
     const session = await api.currentAnticipationSession(
       building,
@@ -333,6 +378,41 @@ function App() {
     currentUser,
     eventWorkspace,
     canViewAnticipation,
+  ])
+
+  useEffect(() => {
+    if (
+      !currentUser ||
+      currentUser.role === 'live' ||
+      screen !== 'sorteio' ||
+      !eventWorkspace
+    )
+      return
+    const timer = window.setTimeout(() => {
+      void api
+        .publishLiveBoard({
+          building,
+          drawGroup: activeDrawGroup,
+          associateCode: liveAssociateCode,
+          focusApartment: config.apartmentById[selectedId] ? selectedId : '',
+          view,
+          sceneTheme,
+          highlightAvailability: showAvailability,
+        })
+        .catch(() => undefined)
+    }, 300)
+    return () => window.clearTimeout(timer)
+  }, [
+    currentUser,
+    screen,
+    eventWorkspace,
+    building,
+    activeDrawGroup,
+    liveAssociateCode,
+    selectedId,
+    view,
+    sceneTheme,
+    showAvailability,
   ])
 
   useEffect(() => {
@@ -489,15 +569,28 @@ function App() {
       anticipationSession.nextSource === 'anticipator'
         ? anticipationSession.nextAnticipator
         : null
+    const drawnTurn =
+      !existing &&
+      anticipationSession?.status === 'active' &&
+      anticipationSession.nextSource === 'draw'
+    if (drawnTurn && !drawnAssociateCode) {
+      showNotice(
+        'Informe o número do sorteado na plaquinha antes de escolher o apartamento.',
+      )
+      return
+    }
     setDrawBall(
       nextAnticipator
         ? activeDrawGroup
           ? nextAnticipator.associateCode.slice(-4)
           : nextAnticipator.associateCode
-        : (parsed?.ball ?? existing?.ball ?? ''),
+        : drawnTurn
+          ? drawBall
+          : (parsed?.ball ?? existing?.ball ?? ''),
     )
     setParticipant(
-      nextAnticipator?.participant ?? existing?.participant ?? '',
+      nextAnticipator?.participant ??
+        (drawnTurn ? drawnName : (existing?.participant ?? '')),
     )
     setJustification('')
     setModalError('')
@@ -626,6 +719,8 @@ function App() {
     try {
       const session = await api.advanceAnticipationTurn(anticipationSession.id)
       setAnticipationSession(session)
+      setDrawBall('')
+      setParticipant('')
       showNotice(
         session.nextSource === 'anticipator'
           ? 'Plaquinha atualizada: vez do antecipador.'
@@ -674,6 +769,19 @@ function App() {
           void refreshMap().catch(() =>
             showNotice('Não foi possível carregar os dados do servidor'),
           )
+        }}
+      />
+    )
+  }
+
+  if (currentUser.role === 'live') {
+    return (
+      <LiveScreen
+        onLogout={() => {
+          void logout().finally(() => {
+            setCurrentUser(null)
+            setEventWorkspace(null)
+          })
         }}
       />
     )
@@ -810,6 +918,30 @@ function App() {
           error instanceof Error
             ? error.message
             : 'Não foi possível atualizar a sessão.',
+        )
+      } finally {
+        setAnticipationBusy(false)
+      }
+    },
+    onSavePeriod: async (startsAt: string, endsAt: string) => {
+      if (!anticipationSession) return
+      setAnticipationBusy(true)
+      setAnticipationError('')
+      try {
+        setAnticipationSession(
+          await api.setAnticipationPeriod(
+            anticipationSession.id,
+            startsAt,
+            endsAt,
+          ),
+        )
+        setPeriodOpen(false)
+        showNotice('Período do evento atualizado')
+      } catch (error) {
+        setAnticipationError(
+          error instanceof Error
+            ? error.message
+            : 'Não foi possível salvar o período.',
         )
       } finally {
         setAnticipationBusy(false)
@@ -1032,6 +1164,44 @@ function App() {
         <small>
           {activeProject.name} · {activeProject.location}
         </small>
+        {screen === 'sorteio' &&
+          currentUser.role === 'admin' &&
+          anticipationSession && (
+            <EventPeriodEditor
+              startsAt={anticipationSession.startsAt}
+              endsAt={anticipationSession.endsAt}
+              open={periodOpen}
+              startValue={periodStart}
+              endValue={periodEnd}
+              busy={anticipationBusy}
+              error={anticipationError}
+              onOpen={() => {
+                setPeriodStart(datetimeLocalValue(anticipationSession.startsAt))
+                setPeriodEnd(datetimeLocalValue(anticipationSession.endsAt))
+                setPeriodOpen(true)
+                setAnticipationError('')
+              }}
+              onClose={() => setPeriodOpen(false)}
+              onStart={setPeriodStart}
+              onEnd={setPeriodEnd}
+              onSave={() => {
+                const start = new Date(periodStart)
+                const end = new Date(periodEnd)
+                if (
+                  Number.isNaN(start.getTime()) ||
+                  Number.isNaN(end.getTime()) ||
+                  end.getTime() <= start.getTime()
+                ) {
+                  setAnticipationError('O término precisa ser depois do início.')
+                  return
+                }
+                void anticipationActions.onSavePeriod(
+                  start.toISOString(),
+                  end.toISOString(),
+                )
+              }}
+            />
+          )}
       </section>
 
       {anticipationSession?.status === 'active' && (
@@ -1045,16 +1215,27 @@ function App() {
               ? 'Antecipador'
               : 'Sorteio'}
           </strong>
-          <small>
-            {anticipationSession.awaitingNext
-              ? 'Reserva feita. Próximo troca a plaquinha.'
-              : anticipationSession.nextSource === 'anticipator' &&
-                  anticipationSession.nextAnticipator
-                ? `${anticipationSession.nextAnticipator.associateCode} · ${anticipationSession.nextAnticipator.participant}`
-                : anticipationSession.nextSource === 'draw'
-                  ? 'Informe a bolinha ao escolher a unidade'
+          {anticipationSession.nextSource === 'draw' &&
+          !anticipationSession.awaitingNext ? (
+            <DrawnBallField
+              group={activeDrawGroup}
+              ball={drawBall}
+              code={drawnAssociateCode}
+              name={drawnName}
+              onChange={setDrawnBall}
+            />
+          ) : (
+            <small>
+              {anticipationSession.awaitingNext
+                ? drawnAssociateCode
+                  ? `${drawnAssociateCode} reservado. Próximo troca a plaquinha.`
+                  : 'Reserva feita. Próximo troca a plaquinha.'
+                : anticipationSession.nextSource === 'anticipator' &&
+                    anticipationSession.nextAnticipator
+                  ? `${anticipationSession.nextAnticipator.associateCode} · ${anticipationSession.nextAnticipator.participant}`
                   : 'Ranking de antecipadores concluído'}
-          </small>
+            </small>
+          )}
           <span className="active-turn-rule">
             {anticipationSession.anticipatorTurnsUsed >=
             anticipationSession.anticipatorSlots
@@ -1089,7 +1270,10 @@ function App() {
         />
       ) : (
         <main className="workspace">
-          <section className="viewer-card" aria-label="Visualização 3D do edifício">
+          <section
+            className={`viewer-card ${sceneTheme === 'light' ? 'is-scene-light' : ''}`}
+            aria-label="Visualização 3D do edifício"
+          >
             <div className="viewer-toolbar">
               <div className="view-tabs">
                 {VIEW_OPTIONS.map((option) => (
@@ -1156,6 +1340,30 @@ function App() {
                 >
                   <Compass size={14} /> Entorno
                 </button>
+                <div className="scene-theme-switch" role="group" aria-label="Tema do fundo">
+                  <button
+                    type="button"
+                    className={sceneTheme === 'light' ? 'active' : ''}
+                    aria-pressed={sceneTheme === 'light'}
+                    onClick={() => {
+                      setSceneTheme('light')
+                      window.localStorage.setItem('evo-coop-scene-theme', 'light')
+                    }}
+                  >
+                    Claro
+                  </button>
+                  <button
+                    type="button"
+                    className={sceneTheme === 'dark' ? 'active' : ''}
+                    aria-pressed={sceneTheme === 'dark'}
+                    onClick={() => {
+                      setSceneTheme('dark')
+                      window.localStorage.setItem('evo-coop-scene-theme', 'dark')
+                    }}
+                  >
+                    Escuro
+                  </button>
+                </div>
                 <span className="viewer-hint">
                   <Eye size={14} /> Arraste para girar · role para zoom
                 </span>
@@ -1183,6 +1391,7 @@ function App() {
                   view={view}
                   showFloorScale={showFloorScale}
                   highlightAvailability={showAvailability}
+                  sceneTheme={sceneTheme}
                   onSelect={selectApartment}
                   onActivate={requestApartment}
                 />
@@ -1191,6 +1400,11 @@ function App() {
                     session={anticipationSession}
                     variant="canvas"
                     nextBusy={turnBusy}
+                    drawnGroup={activeDrawGroup}
+                    drawnBall={drawBall}
+                    drawnCode={drawnAssociateCode}
+                    drawnName={drawnName}
+                    onDrawnBallChange={setDrawnBall}
                     onNext={() => void advanceTurn()}
                   />
                 )}
@@ -1270,6 +1484,11 @@ function App() {
                     session={anticipationSession}
                     variant="canvas"
                     nextBusy={turnBusy}
+                    drawnGroup={activeDrawGroup}
+                    drawnBall={drawBall}
+                    drawnCode={drawnAssociateCode}
+                    drawnName={drawnName}
+                    onDrawnBallChange={setDrawnBall}
                     onNext={() => void advanceTurn()}
                   />
                   {config.groundFloorModel && (
@@ -1316,6 +1535,7 @@ function App() {
                     modelUrl={floorPlanModel}
                     endings={floorPlanEndings}
                     highlightAvailability={showAvailability}
+                    sceneTheme={sceneTheme}
                     onSelect={selectApartment}
                     onActivate={requestApartment}
                   />
@@ -1352,6 +1572,11 @@ function App() {
                 session={anticipationSession}
                 variant="panel"
                 nextBusy={turnBusy}
+                drawnGroup={activeDrawGroup}
+                drawnBall={drawBall}
+                drawnCode={drawnAssociateCode}
+                drawnName={drawnName}
+                onDrawnBallChange={setDrawnBall}
                 onNext={() => void advanceTurn()}
               />
               <div className="draw-metrics-grid">
@@ -1766,13 +1991,14 @@ function App() {
 
             <label className="modal-field">
               <span>
-                {!pendingExisting &&
-                anticipationSession?.status === 'active' &&
-                anticipationSession.nextSource === 'anticipator'
+                {lockedCurrentChoice &&
+                anticipationSession?.nextSource === 'anticipator'
                   ? 'Contrato do antecipador *'
-                  : activeDrawGroup
-                    ? 'Bolinha sorteada *'
-                    : 'Código associado *'}
+                  : lockedCurrentChoice
+                    ? 'Contrato do sorteado *'
+                    : activeDrawGroup
+                      ? 'Bolinha sorteada *'
+                      : 'Código associado *'}
               </span>
               <div className={activeDrawGroup ? 'associate-code-input' : undefined}>
                 {activeDrawGroup && <b>{activeDrawGroup}</b>}
@@ -1781,17 +2007,9 @@ function App() {
                   value={drawBall}
                   inputMode={activeDrawGroup ? 'numeric' : undefined}
                   maxLength={activeDrawGroup ? 4 : undefined}
-                  readOnly={
-                    !pendingExisting &&
-                    anticipationSession?.status === 'active' &&
-                    anticipationSession.nextSource === 'anticipator'
-                  }
+                  readOnly={lockedCurrentChoice}
                   onChange={(event) => {
-                    setDrawBall(
-                      activeDrawGroup
-                        ? event.target.value.replace(/\D/g, '').slice(0, 4)
-                        : event.target.value,
-                    )
+                    setDrawnBall(event.target.value)
                     setModalError('')
                   }}
                   placeholder={activeDrawGroup ? '0001' : 'Ex.: 110396'}
@@ -1813,19 +2031,14 @@ function App() {
 
             <label className="modal-field">
               <span>
-                {!pendingExisting &&
-                anticipationSession?.status === 'active' &&
-                anticipationSession.nextSource === 'anticipator'
+                {lockedCurrentChoice &&
+                anticipationSession?.nextSource === 'anticipator'
                   ? 'Nome do antecipador'
                   : 'Nome do sorteado'}
               </span>
               <input
                 value={participant}
-                readOnly={
-                  !pendingExisting &&
-                  anticipationSession?.status === 'active' &&
-                  anticipationSession.nextSource === 'anticipator'
-                }
+                readOnly={lockedCurrentChoice}
                 onChange={(event) => setParticipant(event.target.value)}
                 placeholder="Opcional"
               />
@@ -2033,6 +2246,91 @@ function App() {
         onBoardOpen={setIssueBoardOpen}
       />
     </div>
+  )
+}
+
+function datetimeLocalValue(iso: string) {
+  const date = new Date(iso)
+  if (Number.isNaN(date.getTime())) return ''
+  const pad = (value: number) => String(value).padStart(2, '0')
+  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}T${pad(date.getHours())}:${pad(date.getMinutes())}`
+}
+
+function formatEventPeriod(iso: string) {
+  return new Intl.DateTimeFormat('pt-BR', {
+    dateStyle: 'short',
+    timeStyle: 'short',
+  }).format(new Date(iso))
+}
+
+function EventPeriodEditor({
+  startsAt,
+  endsAt,
+  open,
+  startValue,
+  endValue,
+  busy,
+  error,
+  onOpen,
+  onClose,
+  onStart,
+  onEnd,
+  onSave,
+}: {
+  startsAt: string
+  endsAt: string
+  open: boolean
+  startValue: string
+  endValue: string
+  busy: boolean
+  error: string
+  onOpen: () => void
+  onClose: () => void
+  onStart: (value: string) => void
+  onEnd: (value: string) => void
+  onSave: () => void
+}) {
+  if (!open) {
+    return (
+      <button type="button" className="event-period-button" onClick={onOpen}>
+        <CalendarClock size={14} />
+        {formatEventPeriod(startsAt)} até {formatEventPeriod(endsAt)}
+        <span>Alterar</span>
+      </button>
+    )
+  }
+  return (
+    <form
+      className="event-period"
+      onSubmit={(event) => {
+        event.preventDefault()
+        onSave()
+      }}
+    >
+      <label>
+        Início
+        <input
+          type="datetime-local"
+          value={startValue}
+          onChange={(event) => onStart(event.target.value)}
+        />
+      </label>
+      <label>
+        Término
+        <input
+          type="datetime-local"
+          value={endValue}
+          onChange={(event) => onEnd(event.target.value)}
+        />
+      </label>
+      <button type="submit" disabled={busy || !startValue || !endValue}>
+        {busy ? 'Salvando…' : 'Salvar'}
+      </button>
+      <button type="button" onClick={onClose} disabled={busy}>
+        Cancelar
+      </button>
+      {error && <small>{error}</small>}
+    </form>
   )
 }
 

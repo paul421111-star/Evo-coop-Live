@@ -3,6 +3,7 @@ import { Canvas, useFrame, type ThreeEvent, useThree } from '@react-three/fiber'
 import { Edges, Html, OrbitControls, useGLTF, useProgress } from '@react-three/drei'
 import { Bloom, EffectComposer, SMAA } from '@react-three/postprocessing'
 import { KeyRound } from 'lucide-react'
+import { balconyKeyOffset } from './balconyKey'
 import {
   CanvasTexture,
   Group,
@@ -36,6 +37,7 @@ type Props = {
   view: BuildingView
   showFloorScale: boolean
   highlightAvailability: boolean
+  sceneTheme?: 'dark' | 'light'
   onSelect: (id: string) => void
   onActivate: (id: string) => void
 }
@@ -200,11 +202,7 @@ function ApartmentVolumes({
     for (const apartment of config.apartments) {
       if ((statuses[apartment.id] ?? 'none') !== 'reserved') continue
       const position = config.unitPositions[apartment.ending]
-      const facesX = Math.abs(position.x) >= Math.abs(position.z)
-      const outwardSign = Math.sign(facesX ? position.x : position.z) || 1
-      worldOut.current
-        .set(facesX ? outwardSign : 0, 0, facesX ? 0 : outwardSign)
-        .transformDirection(group.matrixWorld)
+      const balcony = balconyKeyOffset(position)
       worldCenter.current
         .set(
           position.x,
@@ -213,7 +211,14 @@ function ApartmentVolumes({
         )
         .applyMatrix4(group.matrixWorld)
       toCamera.current.copy(camera.position).sub(worldCenter.current).normalize()
-      if (worldOut.current.dot(toCamera.current) > 0.45) {
+      worldOut.current
+        .set(balcony.facadeNormal.x, 0, balcony.facadeNormal.z)
+        .transformDirection(group.matrixWorld)
+      const facadeFacing = worldOut.current.dot(toCamera.current) > 0.45
+      worldOut.current
+        .set(balcony.balconyNormal.x, 0, balcony.balconyNormal.z)
+        .transformDirection(group.matrixWorld)
+      if (facadeFacing || worldOut.current.dot(toCamera.current) > 0.35) {
         visible.push(apartment.id)
       }
     }
@@ -235,14 +240,16 @@ function ApartmentVolumes({
         const isSelected = selectedId === apartment.id
         const isHovered = hoveredId === apartment.id
         const isFilled = status !== 'none'
+        const plaster = config.kind === 'even'
         const color = isFilled
           ? STATUS_BY_ID[status].color
           : isSelected
             ? SELECTED_UNIT_COLOR
             : highlightAvailability
-              ? STATUS_BY_ID.available.color
+              ? plaster
+                ? '#8FCB9F'
+                : STATUS_BY_ID.available.color
               : '#38bdf8'
-        const plaster = config.kind === 'even'
         const opacity =
           status === 'reserved'
             ? plaster
@@ -257,10 +264,10 @@ function ApartmentVolumes({
                 : highlightAvailability
                   ? isHovered
                     ? plaster
-                      ? 0.16
+                      ? 0.4
                       : 0.3
                     : plaster
-                      ? 0.06
+                      ? 0.28
                       : 0.17
                   : isHovered
                     ? 0.12
@@ -276,15 +283,11 @@ function ApartmentVolumes({
           apartmentFloorCenterY(config, apartment.floor),
           position.z + outwardZ,
         ]
-        const facesX = Math.abs(position.x) >= Math.abs(position.z)
-        const outwardSign = Math.sign(facesX ? position.x : position.z) || 1
-        const faceOffset = (facesX ? position.width : position.depth) / 2 + 0.4
-        // A janela fica um pouco ao lado do centro geométrico da unidade.
-        const windowShift = 2.4
+        const balcony = balconyKeyOffset(position)
         const keyPosition: [number, number, number] = [
-          position.x + (facesX ? outwardSign * faceOffset : windowShift),
+          position.x + balcony.x,
           unitCenter[1],
-          position.z + (facesX ? windowShift : outwardSign * faceOffset),
+          position.z + balcony.z,
         ]
 
         return (
@@ -512,6 +515,8 @@ export function BuildingScene(props: Props) {
     ? apartmentFloorCenterY(props.config, selectedApartment.floor) -
       props.config.floorHeight / 2
     : 0
+  const lightScene = props.sceneTheme === 'light'
+  const background = lightScene ? '#e7eef4' : '#08131f'
 
   const grupo12 = props.config.kind === 'even'
 
@@ -523,20 +528,25 @@ export function BuildingScene(props: Props) {
       gl={{ antialias: true, alpha: false }}
       onPointerMissed={() => undefined}
     >
-      <color attach="background" args={['#08131f']} />
-      <fog attach="fog" args={['#08131f', 190, 340]} />
-      <ambientLight intensity={grupo12 ? 0.62 : 0.55} />
+      <color attach="background" args={[background]} />
+      <fog
+        attach="fog"
+        args={[background, lightScene ? 240 : 190, lightScene ? 460 : 340]}
+      />
+      <ambientLight intensity={lightScene ? 0.85 : grupo12 ? 0.62 : 0.55} />
       <hemisphereLight
         args={
-          grupo12
-            ? [GRUPO_12_DAYLIGHT.sky, GRUPO_12_DAYLIGHT.ground, 1]
-            : ['#dcefff', '#213044', 0.9]
+          lightScene
+            ? ['#f8fbff', '#d5dee8', 1.05]
+            : grupo12
+              ? [GRUPO_12_DAYLIGHT.sky, GRUPO_12_DAYLIGHT.ground, 1]
+              : ['#dcefff', '#213044', 0.9]
         }
       />
       <directionalLight
         color={grupo12 ? GRUPO_12_DAYLIGHT.sun : '#ffffff'}
         position={[70, 145, 85]}
-        intensity={grupo12 ? 2.25 : 2}
+        intensity={grupo12 ? 1.45 : 2}
         castShadow
         shadow-mapSize={[2048, 2048]}
         shadow-camera-far={300}
@@ -586,9 +596,20 @@ export function BuildingScene(props: Props) {
 
       <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, -0.38, 0]} receiveShadow>
         <circleGeometry args={[90, 96]} />
-        <meshStandardMaterial color="#0f2230" roughness={0.92} metalness={0.05} />
+        <meshStandardMaterial
+          color={lightScene ? '#d7e2ec' : '#0f2230'}
+          roughness={0.92}
+          metalness={0.05}
+        />
       </mesh>
-      <gridHelper args={[180, 36, '#224357', '#142b3a']} position={[0, -0.36, 0]} />
+      <gridHelper
+        args={
+          lightScene
+            ? [180, 36, '#b7c6d4', '#c9d5e0']
+            : [180, 36, '#224357', '#142b3a']
+        }
+        position={[0, -0.36, 0]}
+      />
       <CameraController view={props.view} config={props.config} />
       {grupo12 && (
         <EffectComposer multisampling={0} enableNormalPass={false}>

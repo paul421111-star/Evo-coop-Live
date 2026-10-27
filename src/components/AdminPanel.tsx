@@ -393,6 +393,9 @@ export function AdminPanel({
               <option value="operator_obra">
                 Operador Obra · somente mapa
               </option>
+              <option value="live">
+                Transmissão da live · somente acompanha
+              </option>
             </select>
             <button type="button" onClick={() => void addUser()}>
               <UserPlus size={15} /> Cadastrar
@@ -412,7 +415,9 @@ export function AdminPanel({
                       ? 'Administrador'
                       : user.role === 'operator_sede'
                         ? 'Operador Sede · mapa e antecipação'
-                        : 'Operador Obra · somente mapa'}
+                        : user.role === 'live'
+                          ? 'Transmissão da live · somente acompanha'
+                          : 'Operador Obra · somente mapa'}
                   </small>
                 </span>
                 {user.role !== 'admin' && (

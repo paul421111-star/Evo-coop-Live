@@ -6,50 +6,49 @@ import {
 } from 'three'
 
 /**
- * Cores medidas na foto aérea oficial das torres já entregues do Grupo 12.
- * A fachada pronta é reboco claro quente e o vidro é cinza-azulado.
+ * Torres entregues do Grupo 12: tinta branca e fachada de vidro azul-cinza.
  * Fonte: https://chvn.com.br/wp-content/uploads/2026/09/12-2.png
  * Página: https://chvn.com.br/grupo-12-condominio-residencial-parque-firenze/
  */
 export const GRUPO_12_FACADE = {
-  plaster: '#E7DED4',
-  plasterShade: '#C9C3BB',
-  concrete: '#D5CEC4',
-  frame: '#3C424C',
-  glass: '#A8B3C2',
-  balconyGlass: '#D2DAE2',
-  band: '#F1EBE3',
+  plaster: '#F7F8F8',
+  plasterShade: '#E4E8EC',
+  concrete: '#D5DADF',
+  frame: '#3E4A58',
+  glass: '#4A6278',
+  balconyGlass: '#6D879C',
+  band: '#F7F8F8',
 } as const
 
 export const GRUPO_12_DAYLIGHT = {
-  sky: '#F3F6FB',
-  ground: '#D8CFC3',
-  sun: '#FFF3E4',
+  sky: '#E7EEF6',
+  ground: '#C9D3DC',
+  sun: '#F5F8FC',
 } as const
 
 const MATERIAL_TINT: Record<
   string,
   { color: string; metalness?: number; roughness?: number }
 > = {
-  Fachada_branca: { color: GRUPO_12_FACADE.plaster, roughness: 0.74 },
-  Fachada_cinza_clara: { color: GRUPO_12_FACADE.plasterShade, roughness: 0.78 },
-  Fachada_cinza_escura: { color: '#8C8782', roughness: 0.8 },
+  Fachada_branca: { color: GRUPO_12_FACADE.plaster, roughness: 0.84 },
+  Fachada_cinza_clara: { color: GRUPO_12_FACADE.plasterShade, roughness: 0.8 },
+  Fachada_cinza_escura: { color: '#5C6E80', roughness: 0.72 },
   Concreto_novo: { color: GRUPO_12_FACADE.concrete, roughness: 0.86 },
-  Faixa: { color: GRUPO_12_FACADE.band, roughness: 0.7 },
+  Faixa: { color: GRUPO_12_FACADE.band, roughness: 0.8 },
   Esquadria_escura: {
     color: GRUPO_12_FACADE.frame,
-    metalness: 0.42,
-    roughness: 0.38,
+    metalness: 0.28,
+    roughness: 0.46,
   },
   Vidro_fachada: {
     color: GRUPO_12_FACADE.glass,
-    metalness: 0.62,
-    roughness: 0.14,
+    metalness: 0.04,
+    roughness: 0.46,
   },
   Vidro_varanda: {
     color: GRUPO_12_FACADE.balconyGlass,
-    metalness: 0.4,
-    roughness: 0.16,
+    metalness: 0.04,
+    roughness: 0.4,
   },
   Sombra: { color: '#2C3238', roughness: 0.9 },
 }
@@ -67,6 +66,7 @@ export function applyGrupo12Facade(root: Object3D) {
     const next = material.clone()
     next.color.set(spec.color)
     next.emissive.set('#000000')
+    if (material.name.startsWith('Vidro_')) next.envMapIntensity = 0.15
     if (spec.metalness !== undefined) next.metalness = spec.metalness
     if (spec.roughness !== undefined) next.roughness = spec.roughness
     next.name = material.name

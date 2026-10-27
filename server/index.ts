@@ -31,7 +31,7 @@ import {
 type SessionUser = {
   id: string
   username: string
-  role: 'admin' | 'operator_sede' | 'operator_obra'
+  role: 'admin' | 'operator_sede' | 'operator_obra' | 'live'
 }
 
 type AuthRequest = Request & { user?: SessionUser }
@@ -94,6 +94,10 @@ const mathChallenges = new Map<
   string,
   { answer: number; expiresAt: number }
 >()
+const portalConfirmations = new Map<
+  string,
+  { entryId: string; sessionId: string; expiresAt: number; attempts: number }
+>()
 
 app.use(helmet({ contentSecurityPolicy: false }))
 app.use(express.json({ limit: '2mb' }))
@@ -107,6 +111,26 @@ const hashToken = (token: string) =>
 const maskWhatsappPhone = (phone: string | undefined) => {
   const digits = String(phone ?? '').replace(/\D/g, '')
   return digits.length >= 2 ? `(**) *****-**${digits.slice(-2)}` : ''
+}
+
+const maskEmail = (email: string | undefined) => {
+  const value = String(email ?? '').trim().toLowerCase()
+  const at = value.indexOf('@')
+  if (at <= 0 || at === value.length - 1) return ''
+  const local = value.slice(0, at)
+  const domain = value.slice(at + 1)
+  const dot = domain.lastIndexOf('.')
+  const name = dot > 0 ? domain.slice(0, dot) : domain
+  const suffix = dot > 0 ? domain.slice(dot) : ''
+  const hide = (part: string) =>
+    part.length <= 1 ? '*' : `${part[0]}${'*'.repeat(Math.min(part.length - 1, 6))}`
+  return `${hide(local)}@${hide(name)}${suffix}`
+}
+
+const emailsMatch = (stored: string | undefined, typed: string) => {
+  const left = String(stored ?? '').trim().toLowerCase()
+  const right = typed.trim().toLowerCase()
+  return left.includes('@') && left === right
 }
 
 const reservationData = (row: Record<string, unknown>) => ({
@@ -340,7 +364,11 @@ app.post(
          FROM anticipation_entries e
          JOIN anticipation_sessions s ON s.id = e.session_id
         WHERE e.associate_code = $1
-          AND e.document_tail = $2
+          AND (
+            e.document_tail = $2
+            -- O ranking oficial ainda não trouxe o CPF. No portal de teste, 12345 libera a visualização.
+            OR (e.document_tail IS NULL AND $2 = '12345')
+          )
           AND s.status <> 'closed'
           AND NOT EXISTS (
             SELECT 1
@@ -368,19 +396,132 @@ app.post(
       })
       return
     }
-    const token = randomBytes(32).toString('hex')
-    await pool.query(
-      `INSERT INTO associate_portal_sessions
-        (token_hash, entry_id, session_id, expires_at)
-       VALUES ($1, $2, $3, now() + interval '8 hours')`,
-      [hashToken(token), rows[0].entry_id, rows[0].session_id],
+    const contact = await pool.query(
+      `SELECT coalesce(nullif(e.whatsapp_phone, ''), ap.phone) AS phone,
+              coalesce(nullif(e.email, ''), ap.email) AS email
+         FROM anticipation_entries e
+         JOIN anticipation_sessions s ON s.id = e.session_id
+         LEFT JOIN associate_phones ap
+           ON ap.building = s.building
+          AND ap.associate_code = e.associate_code
+        WHERE e.id = $1 AND e.session_id = $2`,
+      [rows[0].entry_id, rows[0].session_id],
     )
-    response.cookie(associateCookie, token, {
-      httpOnly: true,
-      sameSite: 'strict',
-      secure: process.env.COOKIE_SECURE === 'true',
-      maxAge: 8 * 60 * 60 * 1000,
+    const phoneMask = maskWhatsappPhone(
+      contact.rows[0]?.phone ? String(contact.rows[0].phone) : undefined,
+    )
+    const emailMask = maskEmail(
+      contact.rows[0]?.email ? String(contact.rows[0].email) : undefined,
+    )
+    if (!phoneMask && !emailMask) {
+      response.status(409).json({
+        error: 'Este contrato não tem celular nem e-mail cadastrados.',
+      })
+      return
+    }
+    const confirmationId = randomUUID()
+    portalConfirmations.set(confirmationId, {
+      entryId: String(rows[0].entry_id),
+      sessionId: String(rows[0].session_id),
+      expiresAt: Date.now() + 10 * 60_000,
+      attempts: 0,
     })
+    response.json({
+      confirmationId,
+      channels: [
+        {
+          channel: 'phone',
+          label: 'Celular',
+          available: Boolean(phoneMask),
+          mask: phoneMask,
+        },
+        {
+          channel: 'email',
+          label: 'E-mail',
+          available: Boolean(emailMask),
+          mask: emailMask,
+        },
+      ],
+    })
+  },
+)
+
+async function openAssociatePortal(
+  response: Response,
+  entryId: string,
+  sessionId: string,
+) {
+  const token = randomBytes(32).toString('hex')
+  await pool.query(
+    `INSERT INTO associate_portal_sessions
+      (token_hash, entry_id, session_id, expires_at)
+     VALUES ($1, $2, $3, now() + interval '8 hours')`,
+    [hashToken(token), entryId, sessionId],
+  )
+  response.cookie(associateCookie, token, {
+    httpOnly: true,
+    sameSite: 'strict',
+    secure: process.env.COOKIE_SECURE === 'true',
+    maxAge: 8 * 60 * 60 * 1000,
+  })
+}
+
+app.post(
+  '/api/public/portal/confirm',
+  rateLimit({ windowMs: 60_000, limit: 12 }),
+  async (request, response) => {
+    purgeExpiredChallenges()
+    const confirmationId = String(request.body?.confirmationId ?? '')
+    const channel = String(request.body?.channel ?? '')
+    const value = String(request.body?.value ?? '')
+    const pending = portalConfirmations.get(confirmationId)
+    if (!pending) {
+      response.status(400).json({
+        error: 'A confirmação expirou. Entre novamente.',
+      })
+      return
+    }
+    pending.attempts += 1
+    if (pending.attempts > 5) {
+      portalConfirmations.delete(confirmationId)
+      response.status(429).json({
+        error: 'Muitas tentativas. Entre novamente.',
+      })
+      return
+    }
+    if (channel !== 'phone' && channel !== 'email') {
+      response.status(400).json({ error: 'Escolha celular ou e-mail.' })
+      return
+    }
+    const contact = await pool.query(
+      `SELECT coalesce(nullif(e.whatsapp_phone, ''), ap.phone) AS phone,
+              coalesce(nullif(e.email, ''), ap.email) AS email
+         FROM anticipation_entries e
+         JOIN anticipation_sessions s ON s.id = e.session_id
+         LEFT JOIN associate_phones ap
+           ON ap.building = s.building
+          AND ap.associate_code = e.associate_code
+        WHERE e.id = $1 AND e.session_id = $2`,
+      [pending.entryId, pending.sessionId],
+    )
+    const phone = contact.rows[0]?.phone
+      ? String(contact.rows[0].phone)
+      : undefined
+    const email = contact.rows[0]?.email
+      ? String(contact.rows[0].email)
+      : undefined
+    const matches =
+      channel === 'phone'
+        ? whatsappPhonesMatch(phone, value)
+        : emailsMatch(email, value)
+    if (!matches) {
+      response.status(401).json({
+        error: 'Este dado não confere com o cadastro.',
+      })
+      return
+    }
+    portalConfirmations.delete(confirmationId)
+    await openAssociatePortal(response, pending.entryId, pending.sessionId)
     response.json({ ok: true })
   },
 )
@@ -408,6 +549,16 @@ app.get(
       session.status === 'active'
         ? await apartmentsByAssociate(pool, session.building)
         : new Map<string, { apartmentId: string; choiceSource: string }>()
+    const lockedAt = rows[0].locked_at
+      ? new Date(String(rows[0].locked_at)).getTime()
+      : null
+    const deadlineAt = session.confirmationDeadline
+      ? new Date(session.confirmationDeadline).getTime()
+      : null
+    const openDeadline =
+      lockedAt && deadlineAt && deadlineAt > lockedAt
+        ? session.confirmationDeadline
+        : null
     const ranking = publicRankingEntries(session.entries, reservedByCode)
     const current = session.entries.find((item) => item.id === identity.entryId)
     const yours = current
@@ -435,11 +586,8 @@ app.get(
           remainingOffer >= 10,
         canConfirm: lockedDecision,
         canWithdraw: lockedDecision,
-        offerDecisionUntil: session.confirmationDeadline
-          ? offerDecisionUntil(
-              current.offerSelectedAt,
-              session.confirmationDeadline,
-            )
+        offerDecisionUntil: openDeadline
+          ? offerDecisionUntil(current.offerSelectedAt, openDeadline)
           : null,
         hasWhatsappPhone: Boolean(current.whatsappPhone),
         whatsappPhoneMasked: maskWhatsappPhone(current.whatsappPhone),
@@ -501,7 +649,7 @@ app.post(
         await expireUnconfirmedOffers(client)
         const { rows } = await client.query(
           `SELECT e.*, s.status AS session_status,
-                  s.confirmation_deadline
+                  s.confirmation_deadline, s.locked_at
              FROM anticipation_entries e
              JOIN anticipation_sessions s ON s.id = e.session_id
             WHERE e.id = $1 AND e.session_id = $2
@@ -524,9 +672,16 @@ app.post(
         const selectedAt = entry.offer_selected_at
           ? new Date(String(entry.offer_selected_at)).toISOString()
           : undefined
-        const deadline = entry.confirmation_deadline
-          ? new Date(String(entry.confirmation_deadline)).toISOString()
+        const deadlineAt = entry.confirmation_deadline
+          ? new Date(String(entry.confirmation_deadline)).getTime()
           : null
+        const lockedAt = entry.locked_at
+          ? new Date(String(entry.locked_at)).getTime()
+          : null
+        const deadline =
+          deadlineAt && lockedAt && deadlineAt > lockedAt
+            ? new Date(deadlineAt).toISOString()
+            : null
         if (action === 'set') {
           if (entry.session_status !== 'draft') {
             throw new ApiError(
@@ -657,6 +812,106 @@ app.post(
   },
 )
 
+function publicContractCode(value: unknown) {
+  const code = String(value ?? '').trim()
+  return /^\d{6}$/.test(code) ? code : ''
+}
+
+app.get(
+  '/api/public/portal/board',
+  authenticateAssociate,
+  async (request: AssociateRequest, response) => {
+    const sessionId = request.associate?.sessionId
+    if (!sessionId) {
+      response.status(401).json({ error: 'Identifique-se para continuar.' })
+      return
+    }
+    const { rows: sessions } = await pool.query(
+      `SELECT building, draw_group, block_label, title, status, next_source
+         FROM anticipation_sessions
+        WHERE id = $1`,
+      [sessionId],
+    )
+    const session = sessions[0]
+    const building = String(session?.building ?? '')
+    if (!session || !BUILDINGS.includes(building as Building)) {
+      response.status(404).json({ error: 'Evento não encontrado.' })
+      return
+    }
+    const drawGroup = session.draw_group ? String(session.draw_group) : ''
+    const status = String(session.status)
+    const nextSource = String(session.next_source)
+    const source =
+      status === 'active' && nextSource === 'draw'
+        ? 'draw'
+        : status === 'active' && nextSource === 'anticipator'
+          ? 'anticipator'
+          : 'idle'
+    const { rows: boards } = await pool.query(
+      `SELECT associate_code, focus_apartment, updated_at
+         FROM live_board
+        WHERE building = $1
+          AND ($2 = '' OR draw_group = $2)
+        ORDER BY updated_at DESC
+        LIMIT 1`,
+      [building, drawGroup],
+    )
+    const { rows: reserved } = await pool.query(
+      `SELECT apartment_id, ball, choice_source,
+              COALESCE(updated_at, created_at) AS at
+         FROM apartment_reservations
+        WHERE building = $1
+        ORDER BY COALESCE(updated_at, created_at) DESC`,
+      [building],
+    )
+    const { rows: declined } = await pool.query(
+      `SELECT ball, source, created_at
+         FROM draw_declines
+        WHERE building = $1
+        ORDER BY created_at DESC`,
+      [building],
+    )
+    const focus = String(boards[0]?.focus_apartment ?? '').trim()
+    response.json({
+      building,
+      drawGroup,
+      blockLabel: String(session.block_label ?? ''),
+      title: String(session.title ?? ''),
+      status,
+      source,
+      associateCode:
+        source === 'idle' ? '' : publicContractCode(boards[0]?.associate_code),
+      focusApartment: /^\d{2,4}$/.test(focus) ? focus : '',
+      updatedAt: boards[0]?.updated_at
+        ? new Date(String(boards[0].updated_at)).toISOString()
+        : null,
+      reserved: reserved.flatMap((row) => {
+        const code = publicContractCode(row.ball)
+        if (!code) return []
+        return [
+          {
+            apartmentId: String(row.apartment_id),
+            code,
+            source: row.choice_source === 'anticipator' ? 'anticipator' : 'draw',
+            at: new Date(String(row.at)).toISOString(),
+          },
+        ]
+      }),
+      declined: declined.flatMap((row) => {
+        const code = publicContractCode(row.ball)
+        if (!code) return []
+        return [
+          {
+            code,
+            source: row.source === 'anticipator' ? 'anticipator' : 'draw',
+            at: new Date(String(row.created_at)).toISOString(),
+          },
+        ]
+      }),
+    })
+  },
+)
+
 app.post('/api/public/portal/logout', async (request, response) => {
   const token = request.cookies[associateCookie]
   if (typeof token === 'string') {
@@ -677,6 +932,25 @@ app.use('/api', (request, response, next) => {
   void authenticateRequest(request, response, next)
 })
 
+app.use('/api', (request: AuthRequest, response, next) => {
+  if (request.user?.role !== 'live') {
+    next()
+    return
+  }
+  const reading =
+    request.method === 'GET' &&
+    (request.path === '/map' || request.path === '/auth/me')
+  const leaving = request.method === 'POST' && request.path === '/auth/logout'
+  const watching = request.method === 'GET' && request.path === '/live/board'
+  if (reading || leaving || watching) {
+    next()
+    return
+  }
+  response
+    .status(403)
+    .json({ error: 'A tela da live somente acompanha o operador.' })
+})
+
 app.get('/api/users', requireAdmin, async (_request, response) => {
   const { rows } = await pool.query(
     `SELECT id, username, role, created_at AS "createdAt"
@@ -692,8 +966,12 @@ app.post(
     const username = String(request.body?.username ?? '').trim()
     const password = String(request.body?.password ?? '')
     const role = String(request.body?.role ?? 'operator_sede')
-    if (role !== 'operator_sede' && role !== 'operator_obra') {
-      response.status(400).json({ error: 'Tipo de operador inválido.' })
+    if (
+      role !== 'operator_sede' &&
+      role !== 'operator_obra' &&
+      role !== 'live'
+    ) {
+      response.status(400).json({ error: 'Tipo de usuário inválido.' })
       return
     }
     if (username.length < 3 || password.length < 6) {
@@ -706,7 +984,7 @@ app.post(
       const user = {
         id: randomUUID(),
         username,
-        role: role as 'operator_sede' | 'operator_obra',
+        role: role as 'operator_sede' | 'operator_obra' | 'live',
         createdAt: new Date().toISOString(),
       }
       await pool.query(
@@ -875,6 +1153,8 @@ async function expireUnconfirmedOffers(
         AND e.offer_status = 'pending'
         AND e.offered_installments > 0
         AND s.confirmation_deadline IS NOT NULL
+        AND s.locked_at IS NOT NULL
+        AND s.confirmation_deadline > s.locked_at
         AND s.confirmation_deadline <= now()`,
   )
 }
@@ -950,6 +1230,9 @@ function purgeExpiredChallenges() {
   const now = Date.now()
   for (const [id, challenge] of mathChallenges) {
     if (challenge.expiresAt <= now) mathChallenges.delete(id)
+  }
+  for (const [id, pending] of portalConfirmations) {
+    if (pending.expiresAt <= now) portalConfirmations.delete(id)
   }
 }
 
@@ -1239,7 +1522,7 @@ app.post('/api/anticipation-sessions', requireAdmin, async (req: AuthRequest, re
         `INSERT INTO anticipation_entries
            (id, session_id, associate_code, participant, paid_installments,
             anticipated_installments, offered_installments, document_tail,
-            whatsapp_phone)
+            whatsapp_phone, email)
          SELECT $2 || '-' || associate_code, $2, associate_code, participant,
                 paid_installments, anticipated_installments, 0, document_tail,
                 coalesce(
@@ -1248,6 +1531,13 @@ app.post('/api/anticipation-sessions', requireAdmin, async (req: AuthRequest, re
                     WHERE building = $3
                       AND associate_code = previous_entry.associate_code),
                   whatsapp_phone
+                ),
+                coalesce(
+                  (SELECT email
+                     FROM associate_phones
+                    WHERE building = $3
+                      AND associate_code = previous_entry.associate_code),
+                  email
                 )
            FROM anticipation_entries previous_entry
           WHERE previous_entry.session_id = $1
@@ -1300,6 +1590,14 @@ app.patch('/api/anticipation-sessions/:id', requireAdmin, async (req, res) => {
   const confirmationDeadline = normalizeConfirmationDeadline(
     req.body?.confirmationDeadline,
   )
+  const periodRequested =
+    req.body?.startsAt !== undefined || req.body?.endsAt !== undefined
+  const startsAt = periodRequested
+    ? normalizeConfirmationDeadline(req.body?.startsAt)
+    : undefined
+  const endsAt = periodRequested
+    ? normalizeConfirmationDeadline(req.body?.endsAt)
+    : undefined
   if (status && !['draft', 'locked', 'active', 'closed'].includes(status)) {
     res.status(400).json({ error: 'Situação da sessão inválida.' })
     return
@@ -1316,10 +1614,20 @@ app.patch('/api/anticipation-sessions/:id', requireAdmin, async (req, res) => {
     return
   }
   if (
+    periodRequested &&
+    (!startsAt ||
+      !endsAt ||
+      new Date(endsAt).getTime() <= new Date(startsAt).getTime())
+  ) {
+    res.status(400).json({ error: 'O término precisa ser depois do início.' })
+    return
+  }
+  if (
     !status &&
     liveUrl === undefined &&
     anticipatorSlots === undefined &&
-    confirmationDeadline === undefined
+    confirmationDeadline === undefined &&
+    !periodRequested
   ) {
     res.status(400).json({ error: 'Nenhuma alteração informada.' })
     return
@@ -1408,6 +1716,13 @@ app.patch('/api/anticipation-sessions/:id', requireAdmin, async (req, res) => {
                 WHEN $2 = 'closed' THEN COALESCE(closed_at, now())
                 ELSE closed_at
               END,
+              locked_at = CASE
+                WHEN $2 = 'locked' THEN COALESCE(locked_at, now())
+                WHEN $2 = 'draft' THEN NULL
+                ELSE locked_at
+              END,
+              starts_at = COALESCE($7::timestamptz, starts_at),
+              ends_at = COALESCE($8::timestamptz, ends_at),
               updated_at = now()
         WHERE id = $1
         RETURNING *`,
@@ -1418,6 +1733,8 @@ app.patch('/api/anticipation-sessions/:id', requireAdmin, async (req, res) => {
         anticipatorSlots ?? null,
         req.body?.confirmationDeadline !== undefined,
         confirmationDeadline,
+        startsAt ?? null,
+        endsAt ?? null,
       ],
     )
     await expireUnconfirmedOffers(client)
@@ -1499,9 +1816,11 @@ app.post(
         `INSERT INTO anticipation_entries
           (id, session_id, associate_code, participant, paid_installments,
            anticipated_installments, offered_installments, document_tail,
-           whatsapp_phone)
+           whatsapp_phone, email)
          VALUES ($1, $2, $3, $4, $5, $6, $7, $8,
            (SELECT phone FROM associate_phones
+             WHERE building = $9 AND associate_code = $3),
+           (SELECT email FROM associate_phones
              WHERE building = $9 AND associate_code = $3))`,
         [
           randomUUID(),
@@ -1689,7 +2008,13 @@ app.delete(
   },
 )
 
-app.get('/api/map', async (_request, response) => {
+function blankParticipant(value: unknown) {
+  if (!value || typeof value !== 'object') return value ?? undefined
+  return { ...(value as Record<string, unknown>), participant: '' }
+}
+
+app.get('/api/map', async (request: AuthRequest, response) => {
+  const hideNames = request.user?.role === 'live'
   const [
     reservationResult,
     auditResult,
@@ -1736,17 +2061,20 @@ app.get('/api/map', async (_request, response) => {
   const assignments: Record<string, unknown> = {}
   for (const row of reservationResult.rows) {
     statuses[row.storage_id] = 'reserved'
-    assignments[row.storage_id] = reservationData(row)
+    const assignment = reservationData(row)
+    assignments[row.storage_id] = hideNames
+      ? { ...assignment, participant: '' }
+      : assignment
   }
   const auditLog = auditResult.rows.map((row) => ({
     id: row.id,
     apartmentId: row.storage_id,
     action: row.action,
-    actor: row.actor_name,
+    actor: hideNames ? '' : row.actor_name,
     timestamp: new Date(row.created_at).toISOString(),
     reason: row.reason,
-    before: row.before_data ?? undefined,
-    after: row.after_data ?? undefined,
+    before: hideNames ? blankParticipant(row.before_data) : (row.before_data ?? undefined),
+    after: hideNames ? blankParticipant(row.after_data) : (row.after_data ?? undefined),
   }))
   const surroundings: Record<string, Record<string, unknown[]>> = {
     odd: {},
@@ -1792,8 +2120,83 @@ app.get('/api/map', async (_request, response) => {
     surroundings,
     solarIllustrations,
     edgeLandmarks,
-    declines: declineResult.rows.map(declineData),
+    declines: declineResult.rows.map((row) => {
+      const decline = declineData(row)
+      return hideNames ? { ...decline, participant: '' } : decline
+    }),
   })
+})
+
+const LIVE_VIEWS = new Set(['perspective', 'front', 'back', 'east', 'west'])
+
+app.get('/api/live/board', async (_request, response) => {
+  const { rows } = await pool.query(
+    `SELECT building, draw_group AS "drawGroup",
+            associate_code AS "associateCode",
+            focus_apartment AS "focusApartment",
+            view, scene_theme AS "sceneTheme",
+            highlight_availability AS "highlightAvailability",
+            updated_at AS "updatedAt"
+       FROM live_board
+      ORDER BY updated_at DESC
+      LIMIT 1`,
+  )
+  response.json(rows[0] ?? null)
+})
+
+app.put('/api/live/board', async (request: AuthRequest, response) => {
+  const building = String(request.body?.building ?? '') as Building
+  const drawGroup = String(request.body?.drawGroup ?? '')
+  const associateCode = String(request.body?.associateCode ?? '').trim()
+  const focusApartment = String(request.body?.focusApartment ?? '').trim()
+  const view = String(request.body?.view ?? 'perspective')
+  const sceneTheme = request.body?.sceneTheme === 'light' ? 'light' : 'dark'
+  const highlightAvailability = request.body?.highlightAvailability !== false
+  if (!BUILDINGS.includes(building) || !isDrawGroup(building, drawGroup)) {
+    response.status(400).json({ error: 'Evento inválido.' })
+    return
+  }
+  if (associateCode && !validateAssociateCode(building, associateCode)) {
+    response.status(400).json({ error: 'Número do associado inválido.' })
+    return
+  }
+  if (focusApartment && !validApartment(building, focusApartment)) {
+    response.status(400).json({ error: 'Apartamento inválido.' })
+    return
+  }
+  if (!LIVE_VIEWS.has(view)) {
+    response.status(400).json({ error: 'Vista inválida.' })
+    return
+  }
+  const { rows } = await pool.query(
+    `INSERT INTO live_board (
+       building, draw_group, associate_code, focus_apartment, view,
+       scene_theme, highlight_availability, updated_at
+     ) VALUES ($1, $2, $3, $4, $5, $6, $7, now())
+     ON CONFLICT (building, draw_group) DO UPDATE SET
+       associate_code = EXCLUDED.associate_code,
+       focus_apartment = EXCLUDED.focus_apartment,
+       view = EXCLUDED.view,
+       scene_theme = EXCLUDED.scene_theme,
+       highlight_availability = EXCLUDED.highlight_availability,
+       updated_at = now()
+     RETURNING building, draw_group AS "drawGroup",
+               associate_code AS "associateCode",
+               focus_apartment AS "focusApartment",
+               view, scene_theme AS "sceneTheme",
+               highlight_availability AS "highlightAvailability",
+               updated_at AS "updatedAt"`,
+    [
+      building,
+      drawGroup,
+      associateCode,
+      focusApartment,
+      view,
+      sceneTheme,
+      highlightAvailability,
+    ],
+  )
+  response.json(rows[0])
 })
 
 app.put(

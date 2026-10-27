@@ -29,6 +29,7 @@ import {
   normalizeWhatsappPhone,
   phoneFieldValue,
 } from '../config/collectionNotice'
+import { AssociateDrawPanel } from './AssociateDrawPanel'
 import { CelebrationOverlay } from './CelebrationOverlay'
 import { SiteFooter } from './SiteFooter'
 
@@ -62,11 +63,19 @@ const PORTAL_TOUR_STEPS = [
     selector: '.portal-ranking-intro',
     title: 'Ranking ao vivo',
     text: 'O ranking soma parcelas pagas e antecipadas. Em empate, o menor contrato fica à frente. As primeiras posições indicadas na tela participam como antecipadores.',
+    optional: true,
+  },
+  {
+    selector: '.draw-board',
+    title: 'Escolha ao vivo',
+    text: 'Durante o sorteio, o código da vez e os apartamentos ficam ao lado da transmissão. O número muda junto com o operador. O nome do associado não aparece.',
+    optional: true,
   },
   {
     selector: '.portal-live',
     title: 'Acompanhe a transmissão',
     text: 'Quando a cooperativa publicar a transmissão, ela aparece aqui. Se a incorporação não estiver disponível, use o botão para abrir a live em outra aba.',
+    optional: true,
   },
 ] as const
 
@@ -109,6 +118,17 @@ export function AssociatePortal() {
   const [challenge, setChallenge] = useState<{
     id: string
     question: string
+  } | null>(null)
+  const [contactCheck, setContactCheck] = useState<{
+    confirmationId: string
+    channels: Array<{
+      channel: 'phone' | 'email'
+      label: string
+      available: boolean
+      mask: string
+    }>
+    selected: 'phone' | 'email' | null
+    draft: string
   } | null>(null)
   const [error, setError] = useState('')
   const [busy, setBusy] = useState(false)
@@ -275,13 +295,18 @@ export function AssociatePortal() {
     setBusy(true)
     setError('')
     try {
-      await api.portalAccess({
+      const pending = await api.portalAccess({
         associateCode,
         documentTail,
         challengeId: challenge.id,
         answer: Number(answer),
       })
-      await loadView()
+      setContactCheck({
+        confirmationId: pending.confirmationId,
+        channels: pending.channels,
+        selected: null,
+        draft: '',
+      })
     } catch (accessError) {
       setError(
         accessError instanceof Error
@@ -289,6 +314,30 @@ export function AssociatePortal() {
           : 'Não foi possível identificar o associado.',
       )
       await loadChallenge().catch(() => undefined)
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  const submitContact = async (event: FormEvent) => {
+    event.preventDefault()
+    if (!contactCheck?.selected) return
+    setBusy(true)
+    setError('')
+    try {
+      await api.portalConfirm(
+        contactCheck.confirmationId,
+        contactCheck.selected,
+        contactCheck.draft,
+      )
+      setContactCheck(null)
+      await loadView()
+    } catch (confirmError) {
+      setError(
+        confirmError instanceof Error
+          ? confirmError.message
+          : 'Não foi possível confirmar o contato.',
+      )
     } finally {
       setBusy(false)
     }
@@ -399,9 +448,140 @@ export function AssociatePortal() {
           <h1>Antecipe e acompanhe o ranking</h1>
           <p>
             Informe o contrato e os 5 últimos dígitos do CPF. Depois você
-            escolhe quantas parcelas quer antecipar e vê sua posição subir na
-            hora.
+            confirma o celular ou o e-mail do cadastro.
           </p>
+          {contactCheck ? (
+            <form onSubmit={(event) => void submitContact(event)}>
+              {contactCheck.selected === null ? (
+                <>
+                  <p className="portal-contact-lead">
+                    Escolha o contato para confirmar. A tela mostra só um
+                    pedaço do que está no cadastro.
+                  </p>
+                  <div className="portal-contact-choices">
+                    {contactCheck.channels.map((item) => (
+                      <button
+                        key={item.channel}
+                        type="button"
+                        className="portal-contact-choice"
+                        disabled={!item.available}
+                        onClick={() =>
+                          setContactCheck({
+                            ...contactCheck,
+                            selected: item.channel,
+                            draft: '',
+                          })
+                        }
+                      >
+                        <strong>{item.label}</strong>
+                        <small>
+                          {item.available
+                            ? 'Confirmar este contato'
+                            : 'Não cadastrado'}
+                        </small>
+                      </button>
+                    ))}
+                  </div>
+                </>
+              ) : (
+                <>
+                  <p className="portal-contact-lead">
+                    {contactCheck.selected === 'phone'
+                      ? 'Digite o celular completo. Só os dois últimos números aparecem.'
+                      : 'Digite o e-mail completo. Só um pedaço aparece.'}
+                  </p>
+                  <p className="portal-contact-mask">
+                    {contactCheck.channels.find(
+                      (item) => item.channel === contactCheck.selected,
+                    )?.mask || 'Não cadastrado'}
+                  </p>
+                  {contactCheck.channels.find(
+                    (item) => item.channel === contactCheck.selected,
+                  )?.available ? (
+                    <label className="login-field">
+                      <span>
+                        {contactCheck.selected === 'phone'
+                          ? 'Número completo'
+                          : 'E-mail completo'}
+                      </span>
+                      <div>
+                        <input
+                          inputMode={
+                            contactCheck.selected === 'phone' ? 'tel' : 'email'
+                          }
+                          autoComplete={
+                            contactCheck.selected === 'phone' ? 'tel' : 'email'
+                          }
+                          placeholder={
+                            contactCheck.selected === 'phone'
+                              ? '(11) 90000-0000'
+                              : 'nome@email.com'
+                          }
+                          value={contactCheck.draft}
+                          onChange={(event) => {
+                            const element = event.target
+                            if (contactCheck.selected === 'phone') {
+                              const next = phoneFieldValue(
+                                element.value,
+                                element.selectionStart,
+                              )
+                              setContactCheck({
+                                ...contactCheck,
+                                draft: next.value,
+                              })
+                              window.requestAnimationFrame(() => {
+                                element.setSelectionRange(
+                                  next.caret,
+                                  next.caret,
+                                )
+                              })
+                              return
+                            }
+                            setContactCheck({
+                              ...contactCheck,
+                              draft: element.value,
+                            })
+                          }}
+                        />
+                      </div>
+                    </label>
+                  ) : (
+                    <p className="login-error">
+                      Este contato não está no cadastro. Escolha o outro.
+                    </p>
+                  )}
+                  <button
+                    className="login-submit"
+                    type="submit"
+                    disabled={
+                      busy ||
+                      !contactCheck.channels.find(
+                        (item) => item.channel === contactCheck.selected,
+                      )?.available ||
+                      contactCheck.draft.trim().length < 4
+                    }
+                  >
+                    {busy ? 'Conferindo…' : 'Confirmar e entrar'}
+                  </button>
+                  <button
+                    type="button"
+                    className="portal-contact-back"
+                    onClick={() => {
+                      setError('')
+                      setContactCheck({
+                        ...contactCheck,
+                        selected: null,
+                        draft: '',
+                      })
+                    }}
+                  >
+                    Escolher outro contato
+                  </button>
+                </>
+              )}
+              {error && <p className="login-error">{error}</p>}
+            </form>
+          ) : (
           <form onSubmit={(event) => void submitAccess(event)}>
             <label className="login-field">
               <span>Número do contrato</span>
@@ -472,8 +652,9 @@ export function AssociatePortal() {
               {busy ? 'Verificando…' : 'Entrar no ranking'}
             </button>
           </form>
+          )}
           <small>
-            Versão de teste. Depois o CPF virá da base real da cooperativa.
+            Versão de teste. Enquanto o CPF não vier da base, use 12345.
           </small>
         </section>
         <SiteFooter tone="dark" />
@@ -513,18 +694,19 @@ export function AssociatePortal() {
 
   return (
     <main className="associate-portal is-open" ref={portalRef}>
-      {you && (
+      {you && view.status !== 'active' && (
         <button
           type="button"
           className={`portal-rank-bar${heroVisible ? '' : ' is-visible'}`}
           tabIndex={heroVisible ? -1 : 0}
           aria-hidden={heroVisible}
-          onClick={() =>
-            myRowRef.current?.scrollIntoView({
-              behavior: 'smooth',
-              block: 'center',
-            })
-          }
+          onClick={() => {
+            const target =
+              view.status === 'active'
+                ? document.querySelector('.draw-board')
+                : myRowRef.current
+            target?.scrollIntoView({ behavior: 'smooth', block: 'center' })
+          }}
         >
           <span className="rank-bar-position">
             <b>{you.position}º</b>
@@ -549,11 +731,14 @@ export function AssociatePortal() {
             </span>
           </span>
           <span className="rank-bar-jump">
-            <Trophy size={14} /> Ver minha linha
+            <Trophy size={14} />
+            {view.status === 'active' ? 'Ver o sorteio' : 'Ver minha linha'}
           </span>
         </button>
       )}
-      <div className="portal-shell">
+      <div
+        className={`portal-shell${view.status === 'active' ? ' is-draw' : ''}`}
+      >
         <header className="portal-topbar">
           <img
             className="portal-brand"
@@ -611,7 +796,12 @@ export function AssociatePortal() {
           </p>
         )}
 
-        <div className="portal-grid">
+        {view.status === 'active' && (
+          <AssociateDrawPanel embedSrc={embed} liveUrl={view.liveUrl} />
+        )}
+        <div
+          className={`portal-grid${view.status === 'active' ? ' is-draw' : ''}`}
+        >
           <div className="portal-column">
             {you && (
               <section className="portal-hero" ref={heroRef}>
@@ -658,7 +848,10 @@ export function AssociatePortal() {
             {you && (
               <section className="portal-card portal-decision">
                 <h2>
-                  <Trophy size={16} /> Sua antecipação
+                  <Trophy size={16} />{' '}
+                  {you.canConfirm || you.canWithdraw
+                    ? 'Confirme sua antecipação'
+                    : 'Sua antecipação'}
                 </h2>
 
                 {you.canSetOffer ? (
@@ -799,8 +992,9 @@ export function AssociatePortal() {
                 ) : you.canConfirm || you.canWithdraw ? (
                   <>
                     <p className="portal-hint">
-                      As antecipações foram travadas. A quantidade não pode mais
-                      ser alterada. Escolha se mantém ou se não antecipa.
+                      As antecipações foram travadas. A quantidade de{' '}
+                      {you.offeredInstallments} parcelas não pode mais mudar.
+                      Confirme se você realmente quer antecipar.
                     </p>
                     <p className="portal-locked-offer">
                       <b>{you.offeredInstallments}</b>
@@ -854,7 +1048,7 @@ export function AssociatePortal() {
                             disabled={busy}
                             onClick={() => setPendingDecision('confirm')}
                           >
-                            <Check size={15} /> Manter antecipação
+                            <Check size={15} /> Quero antecipar
                           </button>
                         )}
                         {you.canWithdraw && (
@@ -864,7 +1058,7 @@ export function AssociatePortal() {
                             disabled={busy}
                             onClick={() => setPendingDecision('withdraw')}
                           >
-                            <X size={15} /> Não antecipar
+                            <X size={15} /> Não quero antecipar
                           </button>
                         )}
                       </div>
@@ -873,6 +1067,7 @@ export function AssociatePortal() {
               </section>
             )}
 
+            {view.status !== 'active' && (
             <section className="portal-card portal-live">
               <h2>
                 <Radio size={16} /> Transmissão ao vivo
@@ -917,8 +1112,10 @@ export function AssociatePortal() {
                 </p>
               )}
             </section>
+            )}
           </div>
 
+          {view.status !== 'active' && (
           <section className="portal-card portal-ranking-card">
             <div className="portal-ranking-intro">
               <h2>
@@ -981,6 +1178,7 @@ export function AssociatePortal() {
               ))}
             </ol>
           </section>
+          )}
         </div>
         <SiteFooter tone="dark" />
       </div>
@@ -1137,8 +1335,8 @@ export function AssociatePortal() {
             )}
             <h2 id="portal-confirm-title">
               {pendingDecision === 'confirm'
-                ? 'Manter a antecipação?'
-                : 'Não antecipar nenhuma parcela?'}
+                ? 'Você quer antecipar?'
+                : 'Não quer antecipar?'}
             </h2>
             <p>
               {pendingDecision === 'confirm'
@@ -1163,8 +1361,8 @@ export function AssociatePortal() {
                 {busy
                   ? 'Confirmando…'
                   : pendingDecision === 'confirm'
-                    ? 'Sim, manter'
-                    : 'Sim, não antecipar'}
+                    ? 'Sim, quero antecipar'
+                    : 'Sim, não quero'}
               </button>
             </div>
           </section>

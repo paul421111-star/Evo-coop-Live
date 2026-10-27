@@ -1,4 +1,6 @@
 import { randomUUID } from 'node:crypto'
+import { Readable } from 'node:stream'
+import { ZipArchive } from 'archiver'
 import type { Express, NextFunction, Request, Response } from 'express'
 import rateLimit from 'express-rate-limit'
 import twilio from 'twilio'
@@ -16,7 +18,10 @@ import {
 } from './gateway'
 
 type StaffRequest = Request & {
-  user?: { id: string; role: 'admin' | 'operator_sede' | 'operator_obra' }
+  user?: {
+    id: string
+    role: 'admin' | 'operator_sede' | 'operator_obra' | 'live'
+  }
 }
 
 function requireCollections(
@@ -101,6 +106,58 @@ async function twilioOwnsPhoneNumber(
     incoming_phone_numbers?: unknown[]
   }
   return (body.incoming_phone_numbers?.length ?? 0) > 0
+}
+
+function twilioAuthorization(config: ReturnType<typeof twilioVoiceConfig>) {
+  return Buffer.from(`${config.accountSid}:${config.authToken}`).toString('base64')
+}
+
+async function twilioRecordingForCall(
+  config: ReturnType<typeof twilioVoiceConfig>,
+  callSid: string,
+) {
+  const headers = { Authorization: `Basic ${twilioAuthorization(config)}` }
+  const callSids = [callSid]
+  const children = await fetch(
+    `https://api.twilio.com/2010-04-01/Accounts/${config.accountSid}/Calls.json?ParentCallSid=${callSid}&PageSize=20`,
+    { headers },
+  )
+  if (children.ok) {
+    const body = (await children.json()) as { calls?: Array<{ sid?: string }> }
+    for (const call of body.calls ?? []) {
+      if (call.sid) callSids.push(call.sid)
+    }
+  }
+  for (const sid of callSids) {
+    const response = await fetch(
+      `https://api.twilio.com/2010-04-01/Accounts/${config.accountSid}/Recordings.json?CallSid=${sid}&PageSize=5`,
+      { headers },
+    )
+    if (!response.ok) continue
+    const body = (await response.json()) as {
+      recordings?: Array<{ sid?: string; duration?: string }>
+    }
+    const recording = body.recordings?.find((item) => item.sid)
+    if (recording?.sid) {
+      return {
+        recordingSid: recording.sid,
+        durationSeconds: Number(recording.duration ?? 0),
+      }
+    }
+  }
+  return null
+}
+
+function recordingRow(row: Record<string, unknown>) {
+  return {
+    id: String(row.id),
+    associateCode: String(row.associate_code),
+    phone: String(row.phone),
+    callSid: String(row.call_sid),
+    recordingSid: row.recording_sid ? String(row.recording_sid) : '',
+    durationSeconds: Number(row.duration_seconds ?? 0),
+    createdAt: new Date(String(row.created_at)).toISOString(),
+  }
 }
 
 /**
@@ -191,12 +248,16 @@ export function registerCobrancaRoutes(app: Express) {
       const config = twilioVoiceConfig()
       const browser = hasTwilioBrowserConfig(config)
       const hasNumber = browser ? await twilioOwnsPhoneNumber(config) : false
+      const settings = await pool.query(
+        `SELECT record_calls FROM collection_agent_settings WHERE id = true`,
+      )
       response.json({
         configured: browser && hasNumber,
         hint:
           browser && !hasNumber
             ? 'Conclua a validação de identidade na Twilio e compre um número com voz. O headset deste computador liga por esse número.'
             : '',
+        recordCalls: settings.rows[0]?.record_calls !== false,
       })
     },
   )
@@ -558,6 +619,217 @@ export function registerCobrancaRoutes(app: Express) {
         identity,
         iceServers: turnBody.ice_servers ?? [],
       })
+    },
+  )
+
+  app.patch(
+    '/api/cobranca/voice/recording',
+    requireCollections,
+    async (request, response) => {
+      const enabled = request.body?.enabled === true
+      await pool.query(
+        `UPDATE collection_agent_settings
+            SET record_calls = $1, updated_at = now()
+          WHERE id = true`,
+        [enabled],
+      )
+      response.json({ enabled })
+    },
+  )
+
+  app.get(
+    '/api/cobranca/voice/recordings',
+    requireCollections,
+    async (request, response) => {
+      const building = String(request.query.building ?? '')
+      const codes = String(request.query.codes ?? '')
+        .split(',')
+        .map((code) => code.trim())
+        .filter((code) => /^\d{6}$/.test(code))
+        .slice(0, 1000)
+      if (!building || codes.length === 0) {
+        response.json([])
+        return
+      }
+      const { rows } = await pool.query(
+        `SELECT id, associate_code, phone, call_sid, recording_sid,
+                duration_seconds, created_at
+           FROM collection_call_recordings
+          WHERE building = $1
+            AND associate_code = ANY($2::text[])
+          ORDER BY created_at DESC
+          LIMIT 500`,
+        [building, codes],
+      )
+      response.json(rows.map((row) => recordingRow(row)))
+    },
+  )
+
+  app.post(
+    '/api/cobranca/voice/recordings',
+    requireCollections,
+    async (request: StaffRequest, response) => {
+      const building = String(request.body?.building ?? '')
+      const associateCode = String(request.body?.associateCode ?? '')
+      const phone = String(request.body?.phone ?? '').replace(/\D/g, '')
+      const callSid = String(request.body?.callSid ?? '')
+      if (
+        !building ||
+        !/^\d{6}$/.test(associateCode) ||
+        !/^CA[0-9a-f]{32}$/i.test(callSid)
+      ) {
+        response.status(400).json({ error: 'Não foi possível vincular a gravação ao contrato.' })
+        return
+      }
+      const { rows } = await pool.query(
+        `INSERT INTO collection_call_recordings
+           (id, building, associate_code, phone, call_sid, created_by)
+         VALUES ($1, $2, $3, $4, $5, $6)
+         ON CONFLICT (call_sid) DO UPDATE
+           SET phone = EXCLUDED.phone
+         RETURNING id, associate_code, phone, call_sid, recording_sid,
+                   duration_seconds, created_at`,
+        [
+          randomUUID(),
+          building,
+          associateCode,
+          phone,
+          callSid,
+          request.user?.id ?? null,
+        ],
+      )
+      response.status(201).json(recordingRow(rows[0]))
+    },
+  )
+
+  app.post(
+    '/api/cobranca/voice/recordings/:callSid/sync',
+    requireCollections,
+    async (request, response) => {
+      const callSid = String(request.params.callSid)
+      const config = twilioVoiceConfig()
+      if (!hasTwilioBrowserConfig(config) || !/^CA[0-9a-f]{32}$/i.test(callSid)) {
+        response.status(404).json({ error: 'Gravação não encontrada.' })
+        return
+      }
+      const found = await twilioRecordingForCall(config, callSid)
+      if (found) {
+        await pool.query(
+          `UPDATE collection_call_recordings
+              SET recording_sid = $2, duration_seconds = $3
+            WHERE call_sid = $1`,
+          [callSid, found.recordingSid, found.durationSeconds],
+        )
+      }
+      const { rows } = await pool.query(
+        `SELECT id, associate_code, phone, call_sid, recording_sid,
+                duration_seconds, created_at
+           FROM collection_call_recordings
+          WHERE call_sid = $1`,
+        [callSid],
+      )
+      if (!rows[0]) {
+        response.status(404).json({ error: 'Gravação não encontrada.' })
+        return
+      }
+      response.json(recordingRow(rows[0]))
+    },
+  )
+
+  app.get(
+    '/api/cobranca/voice/recordings/:id/media',
+    requireCollections,
+    async (request, response) => {
+      const config = twilioVoiceConfig()
+      const { rows } = await pool.query(
+        `SELECT recording_sid FROM collection_call_recordings WHERE id = $1`,
+        [String(request.params.id)],
+      )
+      const recordingSid = rows[0]?.recording_sid
+        ? String(rows[0].recording_sid)
+        : ''
+      if (!hasTwilioBrowserConfig(config) || !/^RE[0-9a-f]{32}$/i.test(recordingSid)) {
+        response.status(404).json({ error: 'A gravação ainda está sendo preparada.' })
+        return
+      }
+      const upstream = await fetch(
+        `https://api.twilio.com/2010-04-01/Accounts/${config.accountSid}/Recordings/${recordingSid}.mp3`,
+        { headers: { Authorization: `Basic ${twilioAuthorization(config)}` } },
+      )
+      if (!upstream.ok || !upstream.body) {
+        response.status(502).json({ error: 'Não foi possível abrir a gravação.' })
+        return
+      }
+      response.setHeader('Content-Type', 'audio/mpeg')
+      response.setHeader('Content-Disposition', 'inline')
+      Readable.fromWeb(upstream.body as import('node:stream/web').ReadableStream).pipe(response)
+    },
+  )
+
+  app.get(
+    '/api/cobranca/voice/recordings-download',
+    requireCollections,
+    async (request, response) => {
+      const config = twilioVoiceConfig()
+      const building = String(request.query.building ?? '')
+      const codes = String(request.query.codes ?? '')
+        .split(',')
+        .map((code) => code.trim())
+        .filter((code) => /^\d{6}$/.test(code))
+        .slice(0, 1000)
+      if (!hasTwilioBrowserConfig(config) || !building || codes.length === 0) {
+        response.status(400).json({ error: 'Nenhuma gravação foi selecionada.' })
+        return
+      }
+      const { rows } = await pool.query(
+        `SELECT associate_code, recording_sid, created_at
+           FROM collection_call_recordings
+          WHERE building = $1
+            AND associate_code = ANY($2::text[])
+            AND recording_sid ~ '^RE[0-9a-fA-F]{32}$'
+          ORDER BY associate_code, created_at DESC
+          LIMIT 500`,
+        [building, codes],
+      )
+      if (rows.length === 0) {
+        response.status(404).json({ error: 'Ainda não existem gravações prontas para baixar.' })
+        return
+      }
+
+      const authorization = `Basic ${twilioAuthorization(config)}`
+      response.setHeader('Content-Type', 'application/zip')
+      response.setHeader(
+        'Content-Disposition',
+        `attachment; filename="gravacoes-${building}-${new Date()
+          .toISOString()
+          .slice(0, 10)}.zip"`,
+      )
+      const archive = new ZipArchive({ zlib: { level: 1 } })
+      archive.on('error', (error) => response.destroy(error))
+      archive.pipe(response)
+      for (const row of rows) {
+        const recordingSid = String(row.recording_sid)
+        const upstream = await fetch(
+          `https://api.twilio.com/2010-04-01/Accounts/${config.accountSid}/Recordings/${recordingSid}.mp3`,
+          { headers: { Authorization: authorization } },
+        )
+        if (!upstream.ok || !upstream.body) continue
+        const stamp = new Date(String(row.created_at))
+          .toISOString()
+          .replace(/[:.]/g, '-')
+        const stream = Readable.fromWeb(
+          upstream.body as import('node:stream/web').ReadableStream,
+        )
+        const consumed = new Promise<void>((resolve) => {
+          stream.once('end', resolve)
+          stream.once('error', resolve)
+        })
+        archive.append(stream, {
+          name: `contrato-${String(row.associate_code)}_${stamp}.mp3`,
+        })
+        await consumed
+      }
+      await archive.finalize()
     },
   )
 
