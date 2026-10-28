@@ -23,6 +23,7 @@ type Props = {
   overlayY?: number
   highlightAvailability?: boolean
   sceneTheme?: 'dark' | 'light'
+  locked?: boolean
   onSelect: (id: string) => void
   onActivate: (id: string) => void
 }
@@ -217,6 +218,7 @@ export function FloorPlanScene(props: Props) {
       }}
       dpr={[1, 1.5]}
       gl={{ antialias: true, alpha: false }}
+      style={{ pointerEvents: props.locked ? 'none' : 'auto' }}
     >
       <color
         attach="background"
@@ -239,7 +241,9 @@ export function FloorPlanScene(props: Props) {
         makeDefault
         target={[0, 0, 0]}
         enableRotate={false}
-        enablePan
+        enabled={!props.locked}
+        enablePan={!props.locked}
+        enableZoom={!props.locked}
         screenSpacePanning
         minZoom={8}
         maxZoom={28}

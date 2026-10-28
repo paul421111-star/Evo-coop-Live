@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState, type CSSProperties } from 'react'
 import {
+  ArrowUpToLine,
   Building2,
   CalendarClock,
   Check,
@@ -26,7 +27,6 @@ import {
   X,
 } from 'lucide-react'
 import { getCurrentUser, logout, type AppUser } from './auth/localAuth'
-import { LiveScreen } from './components/LiveScreen'
 import { api } from './api/client'
 import { AdminPanel } from './components/AdminPanel'
 import { AnticipationPanel } from './components/AnticipationPanel'
@@ -42,6 +42,7 @@ import { CobrancaDesk } from './components/CobrancaDesk'
 import { IssueDesk } from './components/IssueDesk'
 import { SiteFooter } from './components/SiteFooter'
 import { SurroundingIcon } from './components/SurroundingIcon'
+import { ContractDigits } from './components/contractDigits'
 import { DrawnBallField, TurnSign } from './components/TurnSign'
 import {
   BUILDING_CONFIGS,
@@ -52,6 +53,7 @@ import {
   apartmentStorageId,
   buildingEndingsForFloor,
   buildingFloors,
+  highestFreeApartment,
   viewForEnding,
   type ApartmentStatus,
   type BuildingKind,
@@ -175,6 +177,7 @@ function App() {
   const [floorFilter, setFloorFilter] = useState<number | 'all'>('all')
   const [endingFilter, setEndingFilter] = useState<Ending | 'all'>('all')
   const [statusFilter, setStatusFilter] = useState<ApartmentStatus | 'all'>('all')
+  const [followHighestFree, setFollowHighestFree] = useState(false)
   const [notice, setNotice] = useState('')
   const [pendingId, setPendingId] = useState<string | null>(null)
   const [pendingExisting, setPendingExisting] = useState(false)
@@ -317,6 +320,10 @@ function App() {
       ) as Record<string, ApartmentStatus>,
     [allStatuses, building, config.apartments],
   )
+  const highestFree = useMemo(
+    () => highestFreeApartment(config, statuses),
+    [config, statuses],
+  )
 
   const selectedApartment = config.apartmentById[selectedId]
   const drawGroups = drawGroupsForBuilding(building)
@@ -364,7 +371,73 @@ function App() {
   }
 
   useEffect(() => {
-    if (!currentUser || !eventWorkspace || !canViewAnticipation) return
+    if (currentUser?.role !== 'live') return
+    let active = true
+    const follow = () => {
+      void api
+        .liveBoard()
+        .then((board) => {
+          if (!active || !board || !(board.building in BUILDING_CONFIGS)) return
+          const kind = board.building
+          const groups = drawGroupsForBuilding(kind)
+          if (!groups.includes(board.drawGroup as DrawGroup)) return
+          const group = board.drawGroup as DrawGroup
+          const project = projectForBuilding(kind)
+          const block =
+            PROJECTS.find((item) => item.id === project)?.defaultBlock ?? 'D'
+          setBuilding(kind)
+          setActiveDrawGroups((current) =>
+            current[kind] === group ? current : { ...current, [kind]: group },
+          )
+          setEventWorkspace((current) =>
+            current?.building === kind && current.group === group
+              ? current
+              : { project, building: kind, group, block },
+          )
+          if (BUILDING_CONFIGS[kind].apartmentById[board.focusApartment]) {
+            setSelectedId(board.focusApartment)
+          }
+          if (
+            board.view === 'perspective' ||
+            board.view === 'front' ||
+            board.view === 'back' ||
+            board.view === 'east' ||
+            board.view === 'west'
+          ) {
+            setView(board.view)
+          }
+          setSceneTheme(board.sceneTheme === 'light' ? 'light' : 'dark')
+          setShowAvailability(board.highlightAvailability !== false)
+          if (/^\d{6}$/.test(board.associateCode)) {
+            setDrawBall(board.associateCode.slice(-4))
+          }
+          void api
+            .currentAnticipationSession(kind, group)
+            .then((session) => {
+              if (active) setAnticipationSession(session)
+            })
+            .catch(() => undefined)
+        })
+        .catch(() => undefined)
+      void refreshMap().catch(() => undefined)
+    }
+    follow()
+    const timer = window.setInterval(follow, 1000)
+    return () => {
+      active = false
+      window.clearInterval(timer)
+    }
+    // A transmissão só espelha o operador. O mapa e a plaquinha vêm daqui.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [currentUser])
+
+  useEffect(() => {
+    if (
+      !currentUser ||
+      !eventWorkspace ||
+      (!canViewAnticipation && currentUser.role !== 'live')
+    )
+      return
     void api
       .currentAnticipationSession(building, activeDrawGroup)
       .then(setAnticipationSession)
@@ -541,6 +614,7 @@ function App() {
   }
 
   const selectApartment = (id: string) => {
+    if (!highestFree || id !== highestFree.id) setFollowHighestFree(false)
     setSelectedId(id)
     const apartment = config.apartmentById[id]
     if (apartment) setView(viewForEnding(config, apartment.ending))
@@ -549,7 +623,27 @@ function App() {
     }
   }
 
+  const transmission = currentUser?.role === 'live'
+
+  if (followHighestFree && !transmission && highestFree) {
+    const nextView = viewForEnding(config, highestFree.ending)
+    const nextPlan = highestFree.floor === 0 ? 'ground' : 'typical'
+    if (
+      selectedId !== highestFree.id ||
+      floorFilter !== highestFree.floor ||
+      view !== nextView ||
+      (Boolean(config.groundFloorModel) && floorPlanKind !== nextPlan)
+    ) {
+      setFloorFilter(highestFree.floor)
+      setSelectedId(highestFree.id)
+      setView(nextView)
+      if (config.groundFloorModel) setFloorPlanKind(nextPlan)
+    }
+  }
+
   const requestApartment = (id: string) => {
+    if (transmission) return
+    if (!highestFree || id !== highestFree.id) setFollowHighestFree(false)
     setSelectedId(id)
     const apartment = config.apartmentById[id]
     if (apartment) setView(viewForEnding(config, apartment.ending))
@@ -775,17 +869,8 @@ function App() {
     )
   }
 
-  if (currentUser.role === 'live') {
-    return (
-      <LiveScreen
-        onLogout={() => {
-          void logout().finally(() => {
-            setCurrentUser(null)
-            setEventWorkspace(null)
-          })
-        }}
-      />
-    )
+  if (currentUser.role === 'live' && !eventWorkspace) {
+    return <div className="auth-loading">Abrindo a transmissão…</div>
   }
 
   if (!eventWorkspace) {
@@ -1062,8 +1147,9 @@ function App() {
         <button
           type="button"
           className="active-event-switch"
-          onClick={() => setConfirmEventSwitch(true)}
-          title="Trocar condomínio, grupo ou bloco"
+          onClick={transmission ? undefined : () => setConfirmEventSwitch(true)}
+          disabled={transmission}
+          title={transmission ? 'Evento acompanhado ao vivo' : 'Trocar condomínio, grupo ou bloco'}
         >
           <span className="active-event-icon">
             <Building2 size={16} />
@@ -1076,7 +1162,7 @@ function App() {
             <b>Grupo {activeDrawGroup}</b>
             <b>Bloco {eventWorkspace.block}</b>
           </span>
-          <ChevronDown size={15} />
+          {!transmission && <ChevronDown size={15} />}
         </button>
 
         <div className="header-summary" aria-label="Resumo do mapa">
@@ -1104,7 +1190,9 @@ function App() {
                   ? 'Administrador'
                   : currentUser.role === 'operator_sede'
                     ? 'Operador Sede'
-                    : 'Operador Obra'}
+                    : currentUser.role === 'live'
+                      ? 'Transmissão'
+                      : 'Operador Obra'}
               </small>
             </div>
           </div>
@@ -1226,16 +1314,29 @@ function App() {
               onChange={setDrawnBall}
             />
           ) : (
-            <small>
-              {anticipationSession.awaitingNext
-                ? drawnAssociateCode
-                  ? `${drawnAssociateCode} reservado. Próximo troca a plaquinha.`
-                  : 'Reserva feita. Próximo troca a plaquinha.'
-                : anticipationSession.nextSource === 'anticipator' &&
-                    anticipationSession.nextAnticipator
-                  ? `${anticipationSession.nextAnticipator.associateCode} · ${anticipationSession.nextAnticipator.participant}`
-                  : 'Ranking de antecipadores concluído'}
-            </small>
+            <span className="turn-current-value">
+              {anticipationSession.nextSource === 'anticipator' &&
+                anticipationSession.nextAnticipator && (
+                  <span className="turn-sign-number">
+                    <ContractDigits
+                      code={anticipationSession.nextAnticipator.associateCode}
+                    />
+                  </span>
+                )}
+              {anticipationSession.awaitingNext && drawnAssociateCode && (
+                <span className="turn-sign-number">
+                  <ContractDigits code={drawnAssociateCode} />
+                </span>
+              )}
+              <small>
+                {anticipationSession.awaitingNext
+                  ? 'Reservado. Próximo troca a plaquinha.'
+                  : anticipationSession.nextSource === 'anticipator' &&
+                      anticipationSession.nextAnticipator
+                    ? anticipationSession.nextAnticipator.participant
+                    : 'Ranking de antecipadores concluído'}
+              </small>
+            </span>
           )}
           <span className="active-turn-rule">
             {anticipationSession.anticipatorTurnsUsed >=
@@ -1294,6 +1395,7 @@ function App() {
                   <span>Grupo do sorteio</span>
                   <select
                     value={activeDrawGroup}
+                    disabled={transmission}
                     onChange={(event) => {
                       const group = event.target.value as DrawGroup
                       setActiveDrawGroups((current) => ({
@@ -1393,8 +1495,8 @@ function App() {
                   showFloorScale={showFloorScale}
                   highlightAvailability={showAvailability}
                   sceneTheme={sceneTheme}
-                  onSelect={selectApartment}
-                  onActivate={requestApartment}
+                  onSelect={transmission ? () => undefined : selectApartment}
+                  onActivate={transmission ? () => undefined : requestApartment}
                 />
                 {!showFloorPlan && (
                   <TurnSign
@@ -1405,8 +1507,8 @@ function App() {
                     drawnBall={drawBall}
                     drawnCode={drawnAssociateCode}
                     drawnName={drawnName}
-                    onDrawnBallChange={setDrawnBall}
-                    onNext={() => void advanceTurn()}
+                    onDrawnBallChange={transmission ? undefined : setDrawnBall}
+                    onNext={transmission ? undefined : () => void advanceTurn()}
                   />
                 )}
                 {showEnvironment && !showFloorPlan ? (
@@ -1489,8 +1591,8 @@ function App() {
                     drawnBall={drawBall}
                     drawnCode={drawnAssociateCode}
                     drawnName={drawnName}
-                    onDrawnBallChange={setDrawnBall}
-                    onNext={() => void advanceTurn()}
+                    onDrawnBallChange={transmission ? undefined : setDrawnBall}
+                    onNext={transmission ? undefined : () => void advanceTurn()}
                   />
                   {config.groundFloorModel && (
                     <div className="floor-plan-tabs" aria-label="Tipo de planta">
@@ -1537,8 +1639,8 @@ function App() {
                     endings={floorPlanEndings}
                     highlightAvailability={showAvailability}
                     sceneTheme={sceneTheme}
-                    onSelect={selectApartment}
-                    onActivate={requestApartment}
+                    onSelect={transmission ? () => undefined : selectApartment}
+                    onActivate={transmission ? () => undefined : requestApartment}
                   />
                   {showEnvironment && (
                     <EnvironmentOverlay
@@ -1577,8 +1679,8 @@ function App() {
                 drawnBall={drawBall}
                 drawnCode={drawnAssociateCode}
                 drawnName={drawnName}
-                onDrawnBallChange={setDrawnBall}
-                onNext={() => void advanceTurn()}
+                onDrawnBallChange={transmission ? undefined : setDrawnBall}
+                onNext={transmission ? undefined : () => void advanceTurn()}
               />
               <div className="draw-metrics-grid">
                 <article>
@@ -1639,6 +1741,7 @@ function App() {
               items={buildingDeclines}
               busy={declineBusy}
               error={declineError}
+              readOnly={transmission}
               onAdd={async (input) => {
                 setDeclineError('')
                 if (!input.ball) {
@@ -1770,6 +1873,7 @@ function App() {
                   </div>
                 </div>
               )}
+              {!transmission && (
               <button
                 type="button"
                 className="register-draw-button"
@@ -1780,6 +1884,7 @@ function App() {
                   ? 'Registrar sorteio desta unidade'
                   : 'Alterar reserva desta unidade'}
               </button>
+              )}
             </section>
 
             <section className="panel-section filters-section">
@@ -1794,6 +1899,7 @@ function App() {
                     type="button"
                     className="text-button"
                     onClick={() => {
+                      setFollowHighestFree(false)
                       setFloorFilter('all')
                       setEndingFilter('all')
                       setStatusFilter('all')
@@ -1803,17 +1909,49 @@ function App() {
                   </button>
                 )}
               </div>
+              {!transmission && (
+                <button
+                  type="button"
+                  className={`highest-free-button${followHighestFree ? ' is-on' : ''}`}
+                  aria-pressed={followHighestFree}
+                  disabled={!highestFree}
+                  onClick={() => {
+                    if (followHighestFree) {
+                      setFollowHighestFree(false)
+                      return
+                    }
+                    setEndingFilter('all')
+                    setStatusFilter('all')
+                    setFollowHighestFree(true)
+                  }}
+                >
+                  <ArrowUpToLine size={16} />
+                  <span>
+                    <b>
+                      {followHighestFree
+                        ? 'Acompanhando o mais alto livre'
+                        : 'Mais alto livre'}
+                    </b>
+                    <small>
+                      {highestFree
+                        ? `${highestFree.floor === 0 ? 'Térreo' : `${highestFree.floor}º andar`} · apartamento ${highestFree.id}`
+                        : 'Todos os apartamentos já foram selecionados'}
+                    </small>
+                  </span>
+                </button>
+              )}
               <div className="filter-row">
                 <label>
                   <span>Andar</span>
                   <div className="select-wrap">
                     <select
                       value={floorFilter}
-                      onChange={(event) =>
+                      onChange={(event) => {
+                        setFollowHighestFree(false)
                         setFloorFilter(
                           event.target.value === 'all' ? 'all' : Number(event.target.value),
                         )
-                      }
+                      }}
                     >
                       <option value="all">Todos</option>
                       {buildingFloors(config)
@@ -1882,9 +2020,13 @@ function App() {
               floorFilter={floorFilter}
               endingFilter={endingFilter}
               statusFilter={statusFilter}
-              onSelect={selectApartment}
-              onActivate={requestApartment}
+              readOnly={transmission}
+              onSelect={transmission ? () => undefined : selectApartment}
+              onActivate={transmission ? () => undefined : requestApartment}
               onClearTest={
+                transmission
+                  ? undefined
+                  :
                 currentUser.role === 'admin'
                   ? () => setClearMapOpen(true)
                   : undefined
@@ -2242,7 +2384,7 @@ function App() {
       <IssueDesk
         admin={currentUser.role === 'admin'}
         place={`${eventTitle} · Grupo ${activeDrawGroup ?? '—'} · Bloco ${eventWorkspace.block}`}
-        hidden={presenting}
+        hidden={presenting || transmission}
         boardOpen={issueBoardOpen}
         onBoardOpen={setIssueBoardOpen}
       />

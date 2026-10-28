@@ -3,6 +3,7 @@ import { createHash, randomBytes, randomInt, randomUUID } from 'node:crypto'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import bcrypt from 'bcryptjs'
+import compression from 'compression'
 import cookieParser from 'cookie-parser'
 import express, {
   type NextFunction,
@@ -22,6 +23,7 @@ import {
 import { EDGE_LANDMARK_IDS } from '../src/config/surroundings'
 import { whatsappPhonesMatch } from '../src/config/collectionNotice'
 import { pool, transaction } from './db'
+import { createSharedCache } from './sharedCache'
 import { runCollectionAgent, startCollectionAgent } from './whatsapp/agent'
 import {
   registerCobrancaRoutes,
@@ -99,7 +101,11 @@ const portalConfirmations = new Map<
   { entryId: string; sessionId: string; expiresAt: number; attempts: number }
 >()
 
+// O tráfego chega pelo proxy local (Vite ou túnel HTTPS). Sem isso, todos os
+// associados aparecem como 127.0.0.1 e dividem o mesmo limite de login.
+app.set('trust proxy', 'loopback')
 app.use(helmet({ contentSecurityPolicy: false }))
+app.use(compression())
 app.use(express.json({ limit: '2mb' }))
 app.use(express.urlencoded({ extended: false }))
 app.use(cookieParser())
@@ -286,14 +292,14 @@ app.post(
     const token = randomBytes(32).toString('base64url')
     await pool.query(
       `INSERT INTO app_sessions (token_hash, user_id, expires_at)
-       VALUES ($1, $2, now() + interval '12 hours')`,
+       VALUES ($1, $2, now() + interval '24 hours')`,
       [hashToken(token), user.id],
     )
     response.cookie(sessionCookie, token, {
       httpOnly: true,
       sameSite: 'strict',
       secure: process.env.COOKIE_SECURE === 'true',
-      maxAge: 12 * 60 * 60 * 1000,
+      maxAge: 24 * 60 * 60 * 1000,
     })
     response.json({ id: user.id, username: user.username, role: user.role })
   },
@@ -318,7 +324,17 @@ app.get(
   },
 )
 
-app.get('/api/public/portal/challenge', (_request, response) => {
+// Associados no mesmo Wi-Fi ou na mesma operadora saem pelo mesmo IP; o
+// limite por IP é folgado e o limite por contrato barra tentativas de CPF.
+const portalIpLimit = () => rateLimit({ windowMs: 60_000, limit: 600 })
+const portalContractLimit = rateLimit({
+  windowMs: 60_000,
+  limit: 10,
+  keyGenerator: (request) =>
+    `contract:${String(request.body?.associateCode ?? '').trim()}`,
+})
+
+app.get('/api/public/portal/challenge', portalIpLimit(), (_request, response) => {
   purgeExpiredChallenges()
   const left = randomInt(1, 10)
   const right = randomInt(1, 10)
@@ -335,7 +351,8 @@ app.get('/api/public/portal/challenge', (_request, response) => {
 
 app.post(
   '/api/public/portal/access',
-  rateLimit({ windowMs: 60_000, limit: 12 }),
+  portalIpLimit(),
+  portalContractLimit,
   async (request, response) => {
     const associateCode = String(request.body?.associateCode ?? '').trim()
     const documentTail = String(request.body?.documentTail ?? '').trim()
@@ -455,20 +472,20 @@ async function openAssociatePortal(
   await pool.query(
     `INSERT INTO associate_portal_sessions
       (token_hash, entry_id, session_id, expires_at)
-     VALUES ($1, $2, $3, now() + interval '8 hours')`,
+     VALUES ($1, $2, $3, now() + interval '24 hours')`,
     [hashToken(token), entryId, sessionId],
   )
   response.cookie(associateCookie, token, {
     httpOnly: true,
     sameSite: 'strict',
     secure: process.env.COOKIE_SECURE === 'true',
-    maxAge: 8 * 60 * 60 * 1000,
+    maxAge: 24 * 60 * 60 * 1000,
   })
 }
 
 app.post(
   '/api/public/portal/confirm',
-  rateLimit({ windowMs: 60_000, limit: 12 }),
+  portalIpLimit(),
   async (request, response) => {
     purgeExpiredChallenges()
     const confirmationId = String(request.body?.confirmationId ?? '')
@@ -532,26 +549,14 @@ app.get(
   async (request: AssociateRequest, response) => {
     const identity = request.associate
     if (!identity) return
-    const { rows } = await pool.query(
-      `SELECT s.*, u.username AS created_by_name
-         FROM anticipation_sessions s
-         LEFT JOIN app_users u ON u.id = s.created_by
-        WHERE s.id = $1`,
-      [identity.sessionId],
+    const shared = await portalSessionCache.get(identity.sessionId, () =>
+      loadPortalSession(identity.sessionId),
     )
-    if (!rows[0]) {
+    if (!shared) {
       response.status(404).json({ error: 'Sessão não encontrada.' })
       return
     }
-    await expireUnconfirmedOffers()
-    const session = await anticipationSessionData(pool, rows[0])
-    const reservedByCode =
-      session.status === 'active'
-        ? await apartmentsByAssociate(pool, session.building)
-        : new Map<string, { apartmentId: string; choiceSource: string }>()
-    const lockedAt = rows[0].locked_at
-      ? new Date(String(rows[0].locked_at)).getTime()
-      : null
+    const { session, ranking, lockedAt } = shared
     const deadlineAt = session.confirmationDeadline
       ? new Date(session.confirmationDeadline).getTime()
       : null
@@ -559,7 +564,6 @@ app.get(
       lockedAt && deadlineAt && deadlineAt > lockedAt
         ? session.confirmationDeadline
         : null
-    const ranking = publicRankingEntries(session.entries, reservedByCode)
     const current = session.entries.find((item) => item.id === identity.entryId)
     const yours = current
       ? ranking.find((entry) => entry.associateCode === current.associateCode)
@@ -610,9 +614,38 @@ app.get(
   },
 )
 
+/** Ranking do evento montado uma vez e servido a todos os associados por 2s. */
+const portalSessionCache = createSharedCache<Awaited<
+  ReturnType<typeof loadPortalSession>
+>>(2_000)
+
+async function loadPortalSession(sessionId: string) {
+  const { rows } = await pool.query(
+    `SELECT s.*, u.username AS created_by_name
+       FROM anticipation_sessions s
+       LEFT JOIN app_users u ON u.id = s.created_by
+      WHERE s.id = $1`,
+    [sessionId],
+  )
+  if (!rows[0]) return null
+  await expireUnconfirmedOffers()
+  const session = await anticipationSessionData(pool, rows[0])
+  const reservedByCode =
+    session.status === 'active'
+      ? await apartmentsByAssociate(pool, session.building)
+      : new Map<string, { apartmentId: string; choiceSource: string }>()
+  return {
+    session,
+    ranking: publicRankingEntries(session.entries, reservedByCode),
+    lockedAt: rows[0].locked_at
+      ? new Date(String(rows[0].locked_at)).getTime()
+      : null,
+  }
+}
+
 app.post(
   '/api/public/portal/phone-check',
-  rateLimit({ windowMs: 60_000, limit: 20 }),
+  portalIpLimit(),
   authenticateAssociate,
   async (request: AssociateRequest, response) => {
     const identity = request.associate
@@ -804,6 +837,7 @@ app.post(
       }
       throw error
     }
+    portalSessionCache.delete(identity.sessionId)
     if (confirmedNow) {
       // O associado confirmou o lance: a cobrança envia o valor na hora.
       void runCollectionAgent().catch(() => undefined)
@@ -826,95 +860,116 @@ app.get(
       response.status(401).json({ error: 'Identifique-se para continuar.' })
       return
     }
-    const { rows: sessions } = await pool.query(
-      `SELECT building, draw_group, block_label, title, status, next_source
-         FROM anticipation_sessions
-        WHERE id = $1`,
-      [sessionId],
+    const board = await portalBoardCache.get(sessionId, () =>
+      loadPortalBoard(sessionId),
     )
-    const session = sessions[0]
-    const building = String(session?.building ?? '')
-    if (!session || !BUILDINGS.includes(building as Building)) {
+    if (!board) {
       response.status(404).json({ error: 'Evento não encontrado.' })
       return
     }
-    const drawGroup = session.draw_group ? String(session.draw_group) : ''
-    const status = String(session.status)
-    const nextSource = String(session.next_source)
-    const source =
-      status === 'active' && nextSource === 'draw'
-        ? 'draw'
-        : status === 'active' && nextSource === 'anticipator'
-          ? 'anticipator'
-          : 'idle'
-    const { rows: boards } = await pool.query(
-      `SELECT associate_code, focus_apartment, updated_at
-         FROM live_board
-        WHERE building = $1
-          AND ($2 = '' OR draw_group = $2)
-        ORDER BY updated_at DESC
-        LIMIT 1`,
-      [building, drawGroup],
-    )
-    const { rows: reserved } = await pool.query(
-      `SELECT apartment_id, ball, choice_source,
-              COALESCE(updated_at, created_at) AS at
-         FROM apartment_reservations
-        WHERE building = $1
-        ORDER BY COALESCE(updated_at, created_at) DESC`,
-      [building],
-    )
-    const { rows: declined } = await pool.query(
-      `SELECT ball, source, created_at
-         FROM draw_declines
-        WHERE building = $1
-        ORDER BY created_at DESC`,
-      [building],
-    )
-    const focus = String(boards[0]?.focus_apartment ?? '').trim()
-    response.json({
-      building,
-      drawGroup,
-      blockLabel: String(session.block_label ?? ''),
-      title: String(session.title ?? ''),
-      status,
-      source,
-      associateCode:
-        source === 'idle' ? '' : publicContractCode(boards[0]?.associate_code),
-      focusApartment: /^\d{2,4}$/.test(focus) ? focus : '',
-      updatedAt: boards[0]?.updated_at
-        ? new Date(String(boards[0].updated_at)).toISOString()
-        : null,
-      reserved: reserved.flatMap((row) => {
-        const code = publicContractCode(row.ball)
-        if (!code) return []
-        return [
-          {
-            apartmentId: String(row.apartment_id),
-            code,
-            source: row.choice_source === 'anticipator' ? 'anticipator' : 'draw',
-            at: new Date(String(row.at)).toISOString(),
-          },
-        ]
-      }),
-      declined: declined.flatMap((row) => {
-        const code = publicContractCode(row.ball)
-        if (!code) return []
-        return [
-          {
-            code,
-            source: row.source === 'anticipator' ? 'anticipator' : 'draw',
-            at: new Date(String(row.created_at)).toISOString(),
-          },
-        ]
-      }),
-    })
+    // ETag + no-cache: o navegador revalida e recebe 304 sem corpo quando nada mudou.
+    response.set('Cache-Control', 'private, no-cache')
+    response.json(board)
   },
 )
+
+/** O painel é igual para todos do evento: uma consulta serve todos os associados. */
+const portalBoardCache = createSharedCache<Awaited<
+  ReturnType<typeof loadPortalBoard>
+>>(700)
+
+async function loadPortalBoard(sessionId: string) {
+  const { rows: sessions } = await pool.query(
+    `SELECT building, draw_group, block_label, title, status, next_source
+       FROM anticipation_sessions
+      WHERE id = $1`,
+    [sessionId],
+  )
+  const session = sessions[0]
+  const building = String(session?.building ?? '')
+  if (!session || !BUILDINGS.includes(building as Building)) {
+    return null
+  }
+  const drawGroup = session.draw_group ? String(session.draw_group) : ''
+  const status = String(session.status)
+  const nextSource = String(session.next_source)
+  const source =
+    status === 'active' && nextSource === 'draw'
+      ? 'draw'
+      : status === 'active' && nextSource === 'anticipator'
+        ? 'anticipator'
+        : 'idle'
+  const [{ rows: boards }, { rows: reserved }, { rows: declined }] =
+    await Promise.all([
+      pool.query(
+        `SELECT associate_code, focus_apartment, updated_at
+           FROM live_board
+          WHERE building = $1
+            AND ($2 = '' OR draw_group = $2)
+          ORDER BY updated_at DESC
+          LIMIT 1`,
+        [building, drawGroup],
+      ),
+      pool.query(
+        `SELECT apartment_id, ball, choice_source,
+                COALESCE(updated_at, created_at) AS at
+           FROM apartment_reservations
+          WHERE building = $1
+          ORDER BY COALESCE(updated_at, created_at) DESC`,
+        [building],
+      ),
+      pool.query(
+        `SELECT ball, source, created_at
+           FROM draw_declines
+          WHERE building = $1
+          ORDER BY created_at DESC`,
+        [building],
+      ),
+    ])
+  const focus = String(boards[0]?.focus_apartment ?? '').trim()
+  return {
+    building,
+    drawGroup,
+    blockLabel: String(session.block_label ?? ''),
+    title: String(session.title ?? ''),
+    status,
+    source,
+    associateCode:
+      source === 'idle' ? '' : publicContractCode(boards[0]?.associate_code),
+    focusApartment: /^\d{2,4}$/.test(focus) ? focus : '',
+    updatedAt: boards[0]?.updated_at
+      ? new Date(String(boards[0].updated_at)).toISOString()
+      : null,
+    reserved: reserved.flatMap((row) => {
+      const code = publicContractCode(row.ball)
+      if (!code) return []
+      return [
+        {
+          apartmentId: String(row.apartment_id),
+          code,
+          source: row.choice_source === 'anticipator' ? 'anticipator' : 'draw',
+          at: new Date(String(row.at)).toISOString(),
+        },
+      ]
+    }),
+    declined: declined.flatMap((row) => {
+      const code = publicContractCode(row.ball)
+      if (!code) return []
+      return [
+        {
+          code,
+          source: row.source === 'anticipator' ? 'anticipator' : 'draw',
+          at: new Date(String(row.created_at)).toISOString(),
+        },
+      ]
+    }),
+  }
+}
 
 app.post('/api/public/portal/logout', async (request, response) => {
   const token = request.cookies[associateCookie]
   if (typeof token === 'string') {
+    associateAuthCache.delete(hashToken(token))
     await pool.query(
       'DELETE FROM associate_portal_sessions WHERE token_hash = $1',
       [hashToken(token)],
@@ -942,7 +997,9 @@ app.use('/api', (request: AuthRequest, response, next) => {
     (request.path === '/map' || request.path === '/auth/me')
   const leaving = request.method === 'POST' && request.path === '/auth/logout'
   const watching = request.method === 'GET' && request.path === '/live/board'
-  if (reading || leaving || watching) {
+  const followingSession =
+    request.method === 'GET' && request.path === '/anticipation-sessions/current'
+  if (reading || leaving || watching || followingSession) {
     next()
     return
   }
@@ -1253,6 +1310,39 @@ async function authenticateAssociate(
     response.status(401).json({ error: 'Identifique-se para continuar.' })
     return
   }
+  const tokenHash = hashToken(token)
+  const known = await associateAuthCache.get(tokenHash, async () => {
+    const identity = await lookupAssociateSession(tokenHash)
+    if (!identity) throw new AssociateSessionMissing()
+    return identity
+  }).catch((error: unknown) => {
+    if (error instanceof AssociateSessionMissing) return null
+    throw error
+  })
+  if (!known) {
+    await pool.query(
+      'DELETE FROM associate_portal_sessions WHERE token_hash = $1',
+      [tokenHash],
+    )
+    response.clearCookie(associateCookie)
+    response.status(401).json({
+      error: 'Evento encerrado ou associado já contemplado.',
+    })
+    return
+  }
+  request.associate = known
+  next()
+}
+
+class AssociateSessionMissing extends Error {}
+
+/** Quem já entrou no portal fica 10s sem nova ida ao banco a cada consulta. */
+const associateAuthCache = createSharedCache<{
+  entryId: string
+  sessionId: string
+}>(10_000)
+
+async function lookupAssociateSession(tokenHash: string) {
   const { rows } = await pool.query(
     `SELECT p.entry_id, p.session_id
        FROM associate_portal_sessions p
@@ -1267,24 +1357,13 @@ async function authenticateAssociate(
            WHERE c.building = s.building
              AND c.associate_code = e.associate_code
         )`,
-    [hashToken(token)],
+    [tokenHash],
   )
-  if (!rows[0]) {
-    await pool.query(
-      'DELETE FROM associate_portal_sessions WHERE token_hash = $1',
-      [hashToken(token)],
-    )
-    response.clearCookie(associateCookie)
-    response.status(401).json({
-      error: 'Evento encerrado ou associado já contemplado.',
-    })
-    return
-  }
-  request.associate = {
+  if (!rows[0]) return null
+  return {
     entryId: String(rows[0].entry_id),
     sessionId: String(rows[0].session_id),
   }
-  next()
 }
 
 function archiveSummary(row: Record<string, unknown>) {
@@ -1425,10 +1504,17 @@ app.get(
   },
 )
 
-app.get(
-  '/api/anticipation-sessions/current',
-  requireAnticipationAccess,
-  async (req, res) => {
+app.get('/api/anticipation-sessions/current', async (req: AuthRequest, res) => {
+  if (
+    req.user?.role !== 'admin' &&
+    req.user?.role !== 'operator_sede' &&
+    req.user?.role !== 'live'
+  ) {
+    res.status(403).json({
+      error: 'A antecipação está disponível somente para a equipe da sede.',
+    })
+    return
+  }
   const buildingValue = String(req.query.building ?? '')
   const building = BUILDINGS.includes(buildingValue as Building)
     ? (buildingValue as Building)
@@ -1452,9 +1538,26 @@ app.get(
       LIMIT 1`,
     [building, drawGroup],
   )
-  res.json(rows[0] ? await anticipationSessionData(pool, rows[0]) : null)
-  },
-)
+  if (!rows[0]) {
+    res.json(null)
+    return
+  }
+  const session = await anticipationSessionData(pool, rows[0])
+  if (req.user?.role !== 'live') {
+    res.json(session)
+    return
+  }
+  const hidePerson = <T extends { participant: string; whatsappPhone?: string }>(
+    entry: T,
+  ) => ({ ...entry, participant: '', whatsappPhone: undefined })
+  res.json({
+    ...session,
+    entries: session.entries.map(hidePerson),
+    nextAnticipator: session.nextAnticipator
+      ? hidePerson(session.nextAnticipator)
+      : null,
+  })
+})
 
 app.post('/api/anticipation-sessions', requireAdmin, async (req: AuthRequest, res) => {
   const buildingValue = String(req.body?.building ?? '')
@@ -1702,6 +1805,7 @@ app.patch('/api/anticipation-sessions/:id', requireAdmin, async (req, res) => {
         'DELETE FROM associate_portal_sessions WHERE session_id = $1',
         [req.params.id],
       )
+      associateAuthCache.clear()
     }
     const updated = await client.query(
       `UPDATE anticipation_sessions
@@ -3079,6 +3183,7 @@ app.post(
             WHERE session_id = ANY($1::text[])`,
           [closedSessions.rows.map((session) => session.id)],
         )
+        associateAuthCache.clear()
       }
       await client.query(
         `DELETE FROM audit_events
@@ -3233,16 +3338,49 @@ app.use(
 
 const currentDirectory = path.dirname(fileURLToPath(import.meta.url))
 const distDirectory = path.resolve(currentDirectory, '..', 'dist')
-app.use(express.static(distDirectory))
+app.use(
+  '/assets',
+  express.static(path.join(distDirectory, 'assets'), {
+    immutable: true,
+    maxAge: '365d',
+  }),
+)
+app.use(express.static(distDirectory, { maxAge: '1h', index: false }))
 app.use((_request, response) => {
   response.sendFile(path.join(distDirectory, 'index.html'))
 })
 
-app.listen(port, '127.0.0.1', () => {
+process.on('unhandledRejection', (reason) => {
+  console.error('[servidor] promessa rejeitada sem tratamento', reason)
+})
+process.on('uncaughtException', (error) => {
+  // O estado do processo fica incerto: sai e o supervisor (npm start) religa.
+  console.error('[servidor] erro fatal, reiniciando', error)
+  process.exit(1)
+})
+
+async function purgeExpiredSessions() {
+  await pool.query('DELETE FROM associate_portal_sessions WHERE expires_at <= now()')
+  await pool.query('DELETE FROM app_sessions WHERE expires_at <= now()')
+}
+
+// Fila de conexões maior: mil associados abrindo o portal no mesmo segundo.
+const server = app.listen({ port, host: '127.0.0.1', backlog: 4096 }, () => {
   startCollectionAgent()
   void expireUnconfirmedOffers().catch(() => undefined)
+  void purgeExpiredSessions().catch(() => undefined)
   setInterval(() => {
     void expireUnconfirmedOffers().catch(() => undefined)
+    purgeExpiredChallenges()
+    associateAuthCache.purgeExpired()
+    portalBoardCache.purgeExpired()
+    portalSessionCache.purgeExpired()
   }, 30_000)
+  setInterval(() => {
+    void purgeExpiredSessions().catch(() => undefined)
+  }, 10 * 60_000)
   console.log(`Evo Coop Live disponível em http://127.0.0.1:${port}`)
 })
+// Túneis e proxies reaproveitam conexões por até 60s; o Node não pode fechar antes.
+server.keepAliveTimeout = 65_000
+server.headersTimeout = 66_000

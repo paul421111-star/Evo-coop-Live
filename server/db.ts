@@ -18,12 +18,19 @@ const connectionString = databaseUrl
 
 export const pool = new Pool({
   connectionString,
-  // Teto de conexões deste processo com o pooler (porta 6543).
-  // O pooler reaproveita poucas sessões reais do Postgres.
-  // As conexões só abrem conforme a demanda, e as ociosas fecham em 10s.
-  max: 1800,
+  // Os associados leem do cache em memória, então poucas conexões bastam.
+  // O pooler do Supabase recusa clientes acima do limite do plano; passar
+  // disso derruba o portal em vez de enfileirar.
+  max: Number(process.env.DATABASE_POOL_MAX ?? 30),
   idleTimeoutMillis: 10_000,
+  connectionTimeoutMillis: 10_000,
+  keepAlive: true,
   ...(needsSsl ? { ssl: { rejectUnauthorized: false } } : {}),
+})
+
+// Sem este ouvinte, uma conexão ociosa derrubada pelo pooler encerra o processo.
+pool.on('error', (error) => {
+  console.error('[db] conexão ociosa perdida; o pool abre outra', error.message)
 })
 
 export async function transaction<T>(

@@ -528,7 +528,7 @@ select:focus-visible {
 }
 
 .active-turn-strip {
-  min-height: 52px;
+  min-height: 72px;
   display: grid;
   grid-template-columns: auto auto minmax(0, 1fr) auto auto;
   align-items: center;
@@ -591,17 +591,30 @@ select:focus-visible {
 }
 
 .drawn-ball-field b {
-  font-size: 0.95rem;
+  font-size: 1.85rem;
 }
 
 .drawn-ball-field input {
-  width: 4.8em;
+  width: 4.2em;
   border: 1px solid currentColor;
   border-radius: 8px;
-  padding: 6px 8px;
+  padding: 4px 8px;
   background: #fff;
   color: #0f172a;
-  font: 800 0.95rem/1 'Manrope', sans-serif;
+  font: 800 1.85rem/1 'Manrope', sans-serif;
+}
+
+.turn-sign-number {
+  font: 800 1.85rem/1 'Manrope', sans-serif;
+  letter-spacing: 0.03em;
+  white-space: nowrap;
+}
+
+.turn-current-value {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  min-width: 0;
 }
 
 .drawn-ball-code {
@@ -614,18 +627,19 @@ select:focus-visible {
 }
 
 .canvas-turn-sign .drawn-ball-field input {
-  width: 3.8em;
-  padding: 3px 5px;
-  font-size: 11px;
+  width: 4.2em;
+  padding: 4px 8px;
+  font-size: 1.7rem;
 }
 
 .canvas-turn-sign .drawn-ball-code,
-.canvas-turn-sign .drawn-ball-field b {
-  font-size: 11px;
+.canvas-turn-sign .drawn-ball-field b,
+.canvas-turn-sign .turn-sign-number {
+  font-size: 1.7rem;
 }
 
 .floor-plan-view .canvas-turn-sign.is-draw {
-  max-width: min(340px, 72%);
+  max-width: min(460px, 88%);
 }
 
 .active-turn-rule {
@@ -1728,7 +1742,7 @@ select:focus-visible {
 
 .floor-plan-view .canvas-turn-sign {
   top: 58px;
-  max-width: min(196px, 44%);
+  max-width: min(420px, 86%);
 }
 
 .canvas-turn-sign .turn-sign-label {
@@ -1784,6 +1798,12 @@ select:focus-visible {
 
 .canvas-turn-sign.is-idle strong {
   background: #55697a;
+}
+
+.overview-turn .drawn-ball-field b,
+.overview-turn .drawn-ball-field input,
+.overview-turn .turn-sign-number {
+  font-size: 1.35rem;
 }
 
 .overview-turn .turn-sign-label {
@@ -2548,6 +2568,49 @@ select:focus-visible {
   padding-bottom: 14px;
 }
 
+.highest-free-button {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  margin-top: 12px;
+  padding: 8px 10px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--white);
+  color: var(--ink);
+  text-align: left;
+  cursor: pointer;
+}
+
+.highest-free-button b {
+  display: block;
+  font: 700 12px 'Manrope', sans-serif;
+}
+
+.highest-free-button small {
+  display: block;
+  margin-top: 2px;
+  color: var(--muted);
+  font-size: 10px;
+  font-weight: 600;
+}
+
+.highest-free-button svg {
+  flex: none;
+  color: var(--teal);
+}
+
+.highest-free-button.is-on {
+  border-color: #9ad4cf;
+  background: #f1fbfa;
+}
+
+.highest-free-button:disabled {
+  cursor: default;
+  opacity: 0.55;
+}
+
 .text-button {
   padding: 0;
   border: 0;
@@ -2694,6 +2757,30 @@ select:focus-visible {
   background: #e7f3fc;
   color: #0d47a1;
   box-shadow: inset 0 0 0 1px #1565b5;
+}
+
+.unit-cell.is-readonly {
+  cursor: default;
+}
+
+.live-stage-main {
+  flex: 1;
+  min-height: 0;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(300px, 420px);
+}
+
+.live-unit-map {
+  min-height: 0;
+  overflow: auto;
+  padding-top: 72px;
+  background: #f7fafc;
+  color: #102033;
+  border-left: 1px solid #d5e0ea;
+}
+
+.live-stage-main > .viewer-card {
+  height: 100%;
 }
 
 .unit-cell {
@@ -8907,18 +8994,32 @@ select:focus-visible {
 }
 
 .live-stage {
-  min-height: 100vh;
+  position: fixed;
+  inset: 0;
+  z-index: 40;
   display: flex;
   flex-direction: column;
+  height: 100vh;
+  overflow: hidden;
   background: #061018;
   color: #e8f1f8;
 }
 
 .live-stage-bar {
+  position: absolute;
+  z-index: 8;
+  top: 0;
+  right: 0;
+  left: 0;
   display: flex;
   align-items: center;
   gap: 16px;
-  padding: 12px 18px;
+  padding: 14px 18px;
+  pointer-events: none;
+}
+
+.live-stage-bar .ghost-button {
+  pointer-events: auto;
 }
 
 .live-on-air {
@@ -8981,14 +9082,17 @@ select:focus-visible {
 .live-stage .viewer-card {
   flex: 1;
   min-height: 0;
-  margin: 0 12px 12px;
+  margin: 0;
+  border: 0;
+  border-radius: 0;
   display: flex;
   flex-direction: column;
 }
 
 .live-stage .canvas-wrap {
   flex: 1;
-  min-height: 420px;
+  min-height: 0;
+  height: 100%;
 }
 
 @media (max-width: 900px) {
@@ -9393,37 +9497,43 @@ select:focus-visible {
   justify-content: center;
 }
 
-.contract-code .is-group {
-  opacity: 0.55;
-  font-weight: 700;
-}
-
-.draw-current .contract-code .is-group {
-  margin-right: 3px;
-  font-size: 0.68em;
+.contract-code .is-group,
+.contract-code .is-ball {
+  font-size: 1em;
+  font-weight: 800;
 }
 
 .draw-current .contract-code .is-ball {
-  color: #ffe08a;
-  text-shadow: 0 0 16px rgb(255 214 102 / 50%);
+  color: #c5d4e0;
+  text-shadow:
+    0 0 6px rgb(197 212 224 / 80%),
+    0 0 16px rgb(143 166 184 / 70%);
+  animation: ball-glow 2.6s ease-in-out infinite;
 }
 
+@keyframes ball-glow {
+  0%,
+  100% {
+    text-shadow:
+      0 0 4px rgb(197 212 224 / 55%),
+      0 0 12px rgb(143 166 184 / 40%);
+  }
+
+  50% {
+    text-shadow:
+      0 0 10px rgb(232 240 246 / 100%),
+      0 0 22px rgb(143 166 184 / 85%);
+  }
+}
+
+.draw-recent .contract-code .is-ball,
 .live-plaque .contract-code .is-ball {
-  color: #b45309;
+  color: #4a6278;
 }
 
 .draw-unit.is-current .contract-code .is-ball {
-  text-decoration: underline;
-  text-decoration-thickness: 2px;
-  text-underline-offset: 1px;
-}
-
-.draw-recent .contract-code .is-group {
-  opacity: 0.45;
-}
-
-.draw-recent .contract-code .is-ball {
-  color: #b45309;
+  color: #e7eef3;
+  text-shadow: 0 0 8px rgb(213 224 232 / 90%);
 }
 
 .draw-focus {
@@ -9765,6 +9875,7 @@ select:focus-visible {
   .draw-board.is-vfx .draw-board-kicker::before,
   .draw-board.is-vfx .draw-live,
   .draw-current strong.is-arrived,
+  .draw-current .contract-code .is-ball,
   .draw-unit.is-current,
   .draw-meter span::after,
   .draw-board.is-vfx .draw-board-top,

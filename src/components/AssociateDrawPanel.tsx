@@ -98,6 +98,7 @@ export function AssociateDrawPanel({
   useEffect(() => {
     let cancelled = false
     const load = () => {
+      if (document.hidden) return
       void api
         .portalDrawBoard()
         .then((data) => {
@@ -107,9 +108,11 @@ export function AssociateDrawPanel({
     }
     load()
     const timer = window.setInterval(load, 1000)
+    document.addEventListener('visibilitychange', load)
     return () => {
       cancelled = true
       window.clearInterval(timer)
+      document.removeEventListener('visibilitychange', load)
     }
   }, [])
 

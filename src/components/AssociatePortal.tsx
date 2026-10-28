@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type FormEvent } from 'react'
+import { useCallback, useEffect, useRef, useState, type FormEvent } from 'react'
 import {
   BookOpen,
   CalendarClock,
@@ -33,6 +33,7 @@ import { AssociateDrawPanel } from './AssociateDrawPanel'
 import { Grupo12Gallery } from './Grupo12Gallery'
 import { CelebrationOverlay } from './CelebrationOverlay'
 import { SiteFooter } from './SiteFooter'
+import { placeTourCard } from './tourPlacement'
 
 const MIN_INSTALLMENTS = 10
 const MAX_INSTALLMENTS = 30
@@ -154,6 +155,18 @@ export function AssociatePortal() {
   const [heroVisible, setHeroVisible] = useState(true)
   const [tourStep, setTourStep] = useState<number | null>(null)
   const [tourRect, setTourRect] = useState<DOMRect | null>(null)
+  const [tourCardHeight, setTourCardHeight] = useState(260)
+  const tourCardObserver = useRef<ResizeObserver | null>(null)
+  const tourCardRef = useCallback((node: HTMLElement | null) => {
+    tourCardObserver.current?.disconnect()
+    tourCardObserver.current = null
+    if (!node) return
+    const observer = new ResizeObserver(() => {
+      setTourCardHeight(node.offsetHeight)
+    })
+    observer.observe(node)
+    tourCardObserver.current = observer
+  }, [])
   const [celebration, setCelebration] = useState<{
     apartmentId: string
     associateCode: string
@@ -203,18 +216,32 @@ export function AssociatePortal() {
 
   useEffect(() => {
     if (!signedIn) return
-    const timer = window.setInterval(() => {
+    const load = () => {
+      if (document.hidden) return
       void api
         .portalView()
         .then((data) => {
           setView(data)
         })
         .catch(() => undefined)
-    }, 3000)
-    return () => window.clearInterval(timer)
+    }
+    const timer = window.setInterval(load, 3000)
+    document.addEventListener('visibilitychange', load)
+    return () => {
+      window.clearInterval(timer)
+      document.removeEventListener('visibilitychange', load)
+    }
   }, [signedIn])
 
   const hasHero = Boolean(view?.you)
+
+  const tourPlacement = tourRect
+    ? placeTourCard(
+        tourRect,
+        { width: window.innerWidth, height: window.innerHeight },
+        tourCardHeight,
+      )
+    : null
 
   const availableTourSteps = PORTAL_TOUR_STEPS.filter(
     (step) =>
@@ -244,21 +271,22 @@ export function AssociatePortal() {
     if (tourStep === null) return
     const step = availableTourSteps[tourStep]
     if (!step) {
-      closeTour(true)
-      return
+      const timer = window.setTimeout(() => closeTour(true), 0)
+      return () => window.clearTimeout(timer)
     }
     const target = document.querySelector<HTMLElement>(step.selector)
     if (!target) return
-    target.scrollIntoView({ behavior: 'smooth', block: 'center' })
+    const tall = target.getBoundingClientRect().height > window.innerHeight * 0.7
+    target.scrollIntoView({ behavior: 'smooth', block: tall ? 'start' : 'center' })
     const update = () => setTourRect(target.getBoundingClientRect())
     const timer = window.setTimeout(update, 420)
     window.addEventListener('resize', update)
-    portalRef.current?.addEventListener('scroll', update)
+    window.addEventListener('scroll', update, true)
     update()
     return () => {
       window.clearTimeout(timer)
       window.removeEventListener('resize', update)
-      portalRef.current?.removeEventListener('scroll', update)
+      window.removeEventListener('scroll', update, true)
     }
   }, [tourStep])
 
@@ -744,7 +772,7 @@ export function AssociatePortal() {
           </span>
           <span className="rank-bar-jump">
             <Trophy size={14} />
-            {view.status === 'active' ? 'Ver o sorteio' : 'Ver minha linha'}
+            Ver minha linha
           </span>
         </button>
       )}
@@ -1197,59 +1225,39 @@ export function AssociatePortal() {
         <SiteFooter tone="dark" />
       </div>
 
-      {tourStep !== null && tourRect && availableTourSteps[tourStep] && (
+      {tourPlacement && tourStep !== null && availableTourSteps[tourStep] && (
         <div className="portal-tour" role="dialog" aria-modal="true">
           <div
             className="portal-tour-shade is-top"
-            style={{ height: Math.max(0, tourRect.top - 8) }}
+            style={{ height: tourPlacement.focus.top }}
           />
           <div
             className="portal-tour-shade is-left"
             style={{
-              top: Math.max(0, tourRect.top - 8),
-              width: Math.max(0, tourRect.left - 8),
-              height: tourRect.height + 16,
+              top: tourPlacement.focus.top,
+              width: tourPlacement.focus.left,
+              height: tourPlacement.focus.height,
             }}
           />
           <div
             className="portal-tour-shade is-right"
             style={{
-              top: Math.max(0, tourRect.top - 8),
-              left: Math.min(window.innerWidth, tourRect.right + 8),
-              height: tourRect.height + 16,
+              top: tourPlacement.focus.top,
+              left: tourPlacement.focus.left + tourPlacement.focus.width,
+              height: tourPlacement.focus.height,
             }}
           />
           <div
             className="portal-tour-shade is-bottom"
-            style={{ top: Math.min(window.innerHeight, tourRect.bottom + 8) }}
-          />
-          <div
-            className="portal-tour-focus"
             style={{
-              top: Math.max(6, tourRect.top - 8),
-              left: Math.max(6, tourRect.left - 8),
-              width: Math.min(
-                window.innerWidth - 12,
-                tourRect.width + 16,
-              ),
-              height: tourRect.height + 16,
+              top: tourPlacement.focus.top + tourPlacement.focus.height,
             }}
           />
+          <div className="portal-tour-focus" style={tourPlacement.focus} />
           <section
-            className={`portal-tour-card${
-              tourRect.bottom + 230 < window.innerHeight
-                ? ' is-below'
-                : ' is-above'
-            }`}
-            style={{
-              left: Math.min(
-                Math.max(12, tourRect.left),
-                Math.max(12, window.innerWidth - 372),
-              ),
-              ...(tourRect.bottom + 230 < window.innerHeight
-                ? { top: tourRect.bottom + 18 }
-                : { bottom: window.innerHeight - tourRect.top + 18 }),
-            }}
+            ref={tourCardRef}
+            className={`portal-tour-card is-${tourPlacement.side}`}
+            style={tourPlacement.card}
           >
             <header>
               <span>

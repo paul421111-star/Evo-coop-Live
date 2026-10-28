@@ -34,6 +34,7 @@ type Props = {
     anticipationEntryId?: string
   }) => Promise<boolean>
   onRemove: (id: string) => Promise<void>
+  readOnly?: boolean
 }
 
 export function DeclinedDrawsPanel({
@@ -45,6 +46,7 @@ export function DeclinedDrawsPanel({
   error,
   onAdd,
   onRemove,
+  readOnly = false,
 }: Props) {
   const [ball, setBall] = useState('')
   const [participant, setParticipant] = useState('')
@@ -128,7 +130,7 @@ export function DeclinedDrawsPanel({
 
       {expanded && (
         <>
-      <div className="abdication-form">
+      {!readOnly && <div className="abdication-form">
         <label>
           <span>{lockedAnticipator ? 'Contrato do antecipador *' : activeGroup ? 'Bolinha sorteada *' : 'Código associado *'}</span>
           <div className={activeGroup ? 'associate-code-input' : undefined}>
@@ -215,9 +217,9 @@ export function DeclinedDrawsPanel({
           <Plus size={14} />
           Adicionar à lista
         </button>
-      </div>
+      </div>}
 
-      {error && <p className="modal-error">{error}</p>}
+      {error && !readOnly && <p className="modal-error">{error}</p>}
 
       <div className="abdication-list-toolbar">
         <b>Registros recentes</b>
@@ -261,6 +263,7 @@ export function DeclinedDrawsPanel({
                 {item.notes && <p>{item.notes}</p>}
                 <small>Registrado por {item.createdBy}</small>
               </div>
+              {!readOnly && (
               <button
                 type="button"
                 className="icon-button"
@@ -270,6 +273,7 @@ export function DeclinedDrawsPanel({
               >
                 <X size={14} />
               </button>
+              )}
             </li>
           ))}
         </ul>

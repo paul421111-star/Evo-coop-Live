@@ -1,4 +1,5 @@
 import type { AnticipationSession } from '../config/anticipation'
+import { ContractDigits } from './contractDigits'
 
 type Props = {
   session: AnticipationSession | null
@@ -91,10 +92,17 @@ export function TurnSign({
               ? drawnName
                 ? `${drawnCode} · ${drawnName}`
                 : drawnCode
-              : 'Digite o número do sorteado'
+              : onDrawnBallChange
+                ? 'Digite o número do sorteado'
+                : 'Aguardando número sorteado'
   const showNext = session?.status === 'active' && Boolean(onNext)
   const editingDraw =
     source === 'draw' && !session?.awaitingNext && Boolean(onDrawnBallChange)
+  const numberCode =
+    source === 'anticipator'
+      ? (session?.nextAnticipator?.associateCode ?? '')
+      : (drawnCode ?? '')
+  const showNumber = /^\d{6}$/.test(numberCode) && !editingDraw
 
   return (
     <div className={`${className} is-${source}`} aria-live="polite">
@@ -109,8 +117,19 @@ export function TurnSign({
             name={drawnName}
             onChange={onDrawnBallChange!}
           />
+        ) : showNumber ? (
+          <span className="turn-sign-number">
+            <ContractDigits code={numberCode} />
+          </span>
         ) : (
           <small>{hint}</small>
+        )}
+        {showNumber && source === 'anticipator' && session?.nextAnticipator?.participant && (
+          <small>{session.nextAnticipator.participant}</small>
+        )}
+        {showNumber && source === 'draw' && drawnName && <small>{drawnName}</small>}
+        {showNumber && session?.awaitingNext && (
+          <small>Próximo troca a plaquinha.</small>
         )}
       </div>
       {showNext && (

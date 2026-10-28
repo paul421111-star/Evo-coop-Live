@@ -38,6 +38,7 @@ type Props = {
   showFloorScale: boolean
   highlightAvailability: boolean
   sceneTheme?: 'dark' | 'light'
+  locked?: boolean
   onSelect: (id: string) => void
   onActivate: (id: string) => void
 }
@@ -73,9 +74,11 @@ function viewPositions(config: BuildingConfig) {
 function CameraController({
   view,
   config,
+  locked = false,
 }: {
   view: BuildingView
   config: BuildingConfig
+  locked?: boolean
 }) {
   const { camera } = useThree()
   const controls = useRef<OrbitControlsImpl>(null)
@@ -95,6 +98,7 @@ function CameraController({
       ref={controls}
       makeDefault
       target={[0, centerY, 0]}
+      enabled={!locked}
       enableDamping
       dampingFactor={0.07}
       minDistance={48}
@@ -526,6 +530,7 @@ export function BuildingScene(props: Props) {
       dpr={[1, 1.75]}
       shadows
       gl={{ antialias: true, alpha: false }}
+      style={{ pointerEvents: props.locked ? 'none' : 'auto' }}
       onPointerMissed={() => undefined}
     >
       <color attach="background" args={[background]} />
@@ -610,7 +615,11 @@ export function BuildingScene(props: Props) {
         }
         position={[0, -0.36, 0]}
       />
-      <CameraController view={props.view} config={props.config} />
+      <CameraController
+        view={props.view}
+        config={props.config}
+        locked={props.locked}
+      />
       {grupo12 && (
         <EffectComposer multisampling={0} enableNormalPass={false}>
           <SMAA />

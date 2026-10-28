@@ -5,6 +5,7 @@ import {
   ENDING_MAP,
   FLOOR_COUNT,
   apartmentId,
+  highestFreeApartment,
   viewForEnding,
 } from './building'
 
@@ -58,6 +59,38 @@ describe('configuração do edifício', () => {
       ({ xSign, zSign }) => `${xSign}:${zSign}`,
     )
     expect(new Set(quadrants)).toHaveLength(4)
+  })
+
+  it('aponta o apartamento livre do andar mais alto', () => {
+    const even = BUILDING_CONFIGS.even
+    expect(highestFreeApartment(even, {})?.id).toBe('288')
+    const floor28Taken = Object.fromEntries(
+      even.endings.map((ending) => [`28${ending}`, 'reserved' as const]),
+    )
+    expect(highestFreeApartment(even, floor28Taken)?.id).toBe('278')
+    const only271: Record<string, 'reserved' | 'none'> = Object.fromEntries(
+      even.apartments.map((apartment) => [apartment.id, 'reserved' as const]),
+    )
+    only271['271'] = 'none'
+    expect(highestFreeApartment(even, only271)?.id).toBe('271')
+    expect(
+      highestFreeApartment(
+        even,
+        Object.fromEntries(
+          even.apartments.map((apartment) => [apartment.id, 'reserved' as const]),
+        ),
+      ),
+    ).toBeNull()
+  })
+
+  it('no térreo do Iracema ignora o final 8, que não existe', () => {
+    const iracema = BUILDING_CONFIGS['cond-iracema']
+    const aboveGround = Object.fromEntries(
+      iracema.apartments
+        .filter((apartment) => apartment.floor > 0)
+        .map((apartment) => [apartment.id, 'reserved' as const]),
+    )
+    expect(highestFreeApartment(iracema, aboveGround)?.id).toBe('07')
   })
 
   it('vira a câmera para a fachada do final escolhido', () => {

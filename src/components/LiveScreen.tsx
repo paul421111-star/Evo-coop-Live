@@ -13,6 +13,7 @@ import {
   SOLAR_ILLUSTRATION_BY_ID,
   edgeLandmarksForBuilding,
 } from '../config/surroundings'
+import { ApartmentGrid } from './ApartmentGrid'
 import { BuildingScene, type BuildingView } from './BuildingScene'
 import { EnvironmentOverlay } from './EnvironmentOverlay'
 import { FloorPlanScene } from './FloorPlanScene'
@@ -61,7 +62,7 @@ export function LiveScreen({ onLogout }: Props) {
     loadBoard()
     loadMap()
     const boardTimer = window.setInterval(loadBoard, 1000)
-    const mapTimer = window.setInterval(loadMap, 2000)
+    const mapTimer = window.setInterval(loadMap, 1000)
     return () => {
       active = false
       window.clearInterval(boardTimer)
@@ -123,6 +124,7 @@ export function LiveScreen({ onLogout }: Props) {
         </button>
       </header>
 
+      <div className="live-stage-main">
       <section
         className={`viewer-card ${sceneTheme === 'light' ? 'is-scene-light' : ''}`}
       >
@@ -137,6 +139,7 @@ export function LiveScreen({ onLogout }: Props) {
               showFloorScale
               highlightAvailability={highlight}
               sceneTheme={sceneTheme}
+              locked
               onSelect={() => undefined}
               onActivate={() => undefined}
             />
@@ -206,6 +209,7 @@ export function LiveScreen({ onLogout }: Props) {
                 endings={buildingEndingsForFloor(config, apartment.floor)}
                 highlightAvailability={highlight}
                 sceneTheme={sceneTheme}
+                locked
                 onSelect={() => undefined}
                 onActivate={() => undefined}
               />
@@ -243,6 +247,21 @@ export function LiveScreen({ onLogout }: Props) {
           )}
         </div>
       </section>
+      <aside className="live-unit-map" aria-label="Mapa de unidades">
+        <ApartmentGrid
+          config={config}
+          statuses={statuses}
+          assignments={snapshot?.assignments ?? {}}
+          selectedId={apartment?.id ?? ''}
+          floorFilter="all"
+          endingFilter="all"
+          statusFilter="all"
+          readOnly
+          onSelect={() => undefined}
+          onActivate={() => undefined}
+        />
+      </aside>
+      </div>
     </div>
   )
 }

@@ -23,6 +23,7 @@ type Props = {
   onSelect: (id: string) => void
   onActivate: (id: string) => void
   onClearTest?: () => void
+  readOnly?: boolean
 }
 
 type StatusStyle = CSSProperties & { '--unit-color': string }
@@ -48,6 +49,7 @@ export function ApartmentGrid({
   onSelect,
   onActivate,
   onClearTest,
+  readOnly = false,
 }: Props) {
   const floors =
     floorFilter === 'all'
@@ -139,14 +141,18 @@ export function ApartmentGrid({
                   type="button"
                   className={`unit-cell ${selectedId === id ? 'is-selected' : ''} ${
                     status === 'reserved' ? 'is-reserved' : ''
-                  } ${hidden ? 'is-filtered' : ''}`}
+                  } ${hidden ? 'is-filtered' : ''}${readOnly ? ' is-readonly' : ''}`}
                   style={{ '--unit-color': statusData.color } as StatusStyle}
-                  onClick={() => onSelect(id)}
-                  onDoubleClick={() => onActivate(id)}
+                  onClick={readOnly ? undefined : () => onSelect(id)}
+                  onDoubleClick={readOnly ? undefined : () => onActivate(id)}
                   disabled={hidden}
                   aria-label={`Apartamento ${id}, ${statusData.label}`}
                   aria-pressed={selectedId === id}
-                  title={`Apto ${id} · ${statusData.label} · duplo clique para registrar`}
+                  title={
+                    readOnly
+                      ? `Apto ${id} · ${statusData.label}`
+                      : `Apto ${id} · ${statusData.label} · duplo clique para registrar`
+                  }
                 >
                   <span className="unit-cell-main">
                     {status === 'reserved' ? (

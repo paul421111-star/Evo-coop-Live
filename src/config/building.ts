@@ -328,6 +328,33 @@ export function buildingEndingsForFloor(
   return config.endingsByFloor?.[floor] ?? config.endings
 }
 
+/**
+ * Apartamento livre no andar mais alto. No mesmo andar, vale o final maior.
+ * Andar inteiro reservado: desce para o próximo que ainda tenha unidade livre.
+ */
+export function highestFreeApartment(
+  config: BuildingConfig,
+  statuses: Record<string, ApartmentStatus | undefined>,
+): Apartment | null {
+  const floors = buildingFloors(config)
+  for (let index = floors.length - 1; index >= 0; index -= 1) {
+    const floor = floors[index]
+    const endings = buildingEndingsForFloor(config, floor)
+    for (
+      let endingIndex = endings.length - 1;
+      endingIndex >= 0;
+      endingIndex -= 1
+    ) {
+      const ending = endings[endingIndex]
+      const id = apartmentId(floor, ending)
+      if ((statuses[id] ?? 'none') === 'none') {
+        return config.apartmentById[id] ?? null
+      }
+    }
+  }
+  return null
+}
+
 export function apartmentFloorCenterY(
   config: BuildingConfig,
   floor: number,
