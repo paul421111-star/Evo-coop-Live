@@ -3,9 +3,22 @@ import {
   isOfferDecisionOpen,
   offerDecisionUntil,
   choiceSourceAfterTurn,
+  delinquentGate,
   oppositeChoiceSource,
   rankAnticipators,
 } from './anticipation'
+
+describe('inadimplente no sorteio', () => {
+  it('só acessa o portal quando o administrador permite a entrada', () => {
+    expect(delinquentGate(true, true, false)).toBe('watch')
+    expect(delinquentGate(true, false, false)).toBe('blocked')
+  })
+
+  it('participa quando o administrador libera, ou quando não está inadimplente', () => {
+    expect(delinquentGate(true, false, true)).toBe('participate')
+    expect(delinquentGate(false, false, false)).toBe('participate')
+  })
+})
 
 describe('ranking dos antecipadores', () => {
   it('ordena pelo total de parcelas em ordem decrescente', () => {

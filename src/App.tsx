@@ -81,6 +81,7 @@ import {
 import {
   SOLAR_ILLUSTRATION_BY_ID,
   edgeLandmarksForBuilding,
+  type SolarIllustration,
 } from './config/surroundings'
 import {
   useApartmentStore,
@@ -527,30 +528,38 @@ function App() {
     building,
   )
   const showFloorPlan = Boolean(config.floorModel && selectedApartment)
+  const solarFigure = (illustration: SolarIllustration) => {
+    if (!selectedApartment) return null
+    const option = SOLAR_ILLUSTRATION_BY_ID[illustration]
+    return (
+      <figure
+        className={`solar-illustration-card canvas-solar-card is-${illustration}`}
+        key={illustration}
+      >
+        <img
+          src={option.image}
+          alt={`${option.label} no final ${selectedApartment.ending}`}
+        />
+        <figcaption>
+          <SurroundingIcon icon={option.icon} size={13} />
+          <span>
+            <b>{option.label}</b>
+            <small>Final {selectedApartment.ending}</small>
+          </span>
+        </figcaption>
+      </figure>
+    )
+  }
+  const sunriseIllustrations = selectedSolarIllustrations.filter(
+    (illustration) => illustration === 'sunrise',
+  )
+  const stackedSolar = selectedSolarIllustrations.filter(
+    (illustration) => !showFloorPlan || illustration !== 'sunrise',
+  )
   const solarCards =
-    selectedApartment && selectedSolarIllustrations.length > 0 ? (
+    selectedApartment && stackedSolar.length > 0 ? (
       <div className="canvas-solar-stack">
-        {selectedSolarIllustrations.map((illustration) => {
-          const option = SOLAR_ILLUSTRATION_BY_ID[illustration]
-          return (
-            <figure
-              className="solar-illustration-card canvas-solar-card"
-              key={illustration}
-            >
-              <img
-                src={option.image}
-                alt={`${option.label} no final ${selectedApartment.ending}`}
-              />
-              <figcaption>
-                <SurroundingIcon icon={option.icon} size={13} />
-                <span>
-                  <b>{option.label}</b>
-                  <small>Final {selectedApartment.ending}</small>
-                </span>
-              </figcaption>
-            </figure>
-          )
-        })}
+        {stackedSolar.map(solarFigure)}
       </div>
     ) : null
   const isGroundPlan =
@@ -1097,6 +1106,49 @@ function App() {
         setAnticipationBusy(false)
       }
     },
+    onDelinquentPolicy: async (policy: {
+      delinquentCanAccess?: boolean
+      delinquentCanParticipate?: boolean
+    }) => {
+      if (!anticipationSession) return
+      setAnticipationBusy(true)
+      setAnticipationError('')
+      try {
+        setAnticipationSession(
+          await api.setDelinquentPolicy(anticipationSession.id, policy),
+        )
+      } catch (error) {
+        setAnticipationError(
+          error instanceof Error
+            ? error.message
+            : 'Não foi possível salvar a regra de inadimplência.',
+        )
+      } finally {
+        setAnticipationBusy(false)
+      }
+    },
+    onMarkDelinquent: async (entryId: string, delinquent: boolean) => {
+      if (!anticipationSession) return
+      setAnticipationBusy(true)
+      setAnticipationError('')
+      try {
+        setAnticipationSession(
+          await api.setEntryDelinquent(
+            anticipationSession.id,
+            entryId,
+            delinquent,
+          ),
+        )
+      } catch (error) {
+        setAnticipationError(
+          error instanceof Error
+            ? error.message
+            : 'Não foi possível marcar o contrato.',
+        )
+      } finally {
+        setAnticipationBusy(false)
+      }
+    },
   }
 
   return (
@@ -1495,6 +1547,7 @@ function App() {
                   showFloorScale={showFloorScale}
                   highlightAvailability={showAvailability}
                   sceneTheme={sceneTheme}
+                  pinSelectedLabel={false}
                   onSelect={transmission ? () => undefined : selectApartment}
                   onActivate={transmission ? () => undefined : requestApartment}
                 />
@@ -1510,6 +1563,12 @@ function App() {
                     onDrawnBallChange={transmission ? undefined : setDrawnBall}
                     onNext={transmission ? undefined : () => void advanceTurn()}
                   />
+                )}
+                {selectedApartment && (
+                  <div className="tower-apt-label">
+                    <strong>Apto {selectedApartment.id}</strong>
+                    <span>{STATUS_BY_ID[selectedStatus].label}</span>
+                  </div>
                 )}
                 {showEnvironment && !showFloorPlan ? (
                   <EnvironmentOverlay
@@ -1572,28 +1631,35 @@ function App() {
               </div>
               {showFloorPlan && selectedApartment && (
                 <div className="floor-plan-view">
-                  <div className="floor-plan-heading">
-                    <div>
-                      <span>Planta ampliada</span>
-                      <strong>
-                        {floorPlanFloor === 0
-                          ? 'Térreo'
-                          : `${floorPlanFloor}º andar`}
-                      </strong>
+                  <div className="floor-plan-toolbar">
+                    <TurnSign
+                      session={anticipationSession}
+                      variant="canvas"
+                      nextBusy={turnBusy}
+                      drawnGroup={activeDrawGroup}
+                      drawnBall={drawBall}
+                      drawnCode={drawnAssociateCode}
+                      drawnName={drawnName}
+                      onDrawnBallChange={transmission ? undefined : setDrawnBall}
+                      onNext={transmission ? undefined : () => void advanceTurn()}
+                    />
+                    <div className="floor-plan-heading">
+                      <div>
+                        <span>Planta ampliada</span>
+                        <strong>
+                          {floorPlanFloor === 0
+                            ? 'Térreo'
+                            : `${floorPlanFloor}º andar`}
+                        </strong>
+                      </div>
+                      <small>Clique em uma unidade</small>
                     </div>
-                    <small>Clique em uma unidade</small>
                   </div>
-                  <TurnSign
-                    session={anticipationSession}
-                    variant="canvas"
-                    nextBusy={turnBusy}
-                    drawnGroup={activeDrawGroup}
-                    drawnBall={drawBall}
-                    drawnCode={drawnAssociateCode}
-                    drawnName={drawnName}
-                    onDrawnBallChange={transmission ? undefined : setDrawnBall}
-                    onNext={transmission ? undefined : () => void advanceTurn()}
-                  />
+                  {sunriseIllustrations.length > 0 && (
+                    <div className="floor-plan-sunrise">
+                      {sunriseIllustrations.map(solarFigure)}
+                    </div>
+                  )}
                   {config.groundFloorModel && (
                     <div className="floor-plan-tabs" aria-label="Tipo de planta">
                       <button
@@ -1630,6 +1696,7 @@ function App() {
                       </button>
                     </div>
                   )}
+                  <div className="floor-plan-stage">
                   <FloorPlanScene
                     config={config}
                     floor={floorPlanFloor}
@@ -1642,6 +1709,7 @@ function App() {
                     onSelect={transmission ? () => undefined : selectApartment}
                     onActivate={transmission ? () => undefined : requestApartment}
                   />
+                  </div>
                   {showEnvironment && (
                     <EnvironmentOverlay
                       variant="plan"

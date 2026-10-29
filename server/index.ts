@@ -17,6 +17,7 @@ import { BUILDING_CONFIGS } from '../src/config/building'
 import { isDrawGroup, validateAssociateCode } from '../src/config/drawGroups'
 import {
   choiceSourceAfterTurn,
+  delinquentGate,
   isOfferDecisionOpen,
   offerDecisionUntil,
 } from '../src/config/anticipation'
@@ -377,7 +378,8 @@ app.post(
       return
     }
     const { rows } = await pool.query(
-      `SELECT e.id AS entry_id, s.id AS session_id
+      `SELECT e.id AS entry_id, s.id AS session_id,
+              e.delinquent, s.delinquent_can_access, s.delinquent_can_participate
          FROM anticipation_entries e
          JOIN anticipation_sessions s ON s.id = e.session_id
         WHERE e.associate_code = $1
@@ -410,6 +412,19 @@ app.post(
       response.status(401).json({
         error:
           'Acesso indisponível: contrato não está no evento atual ou já foi contemplado.',
+      })
+      return
+    }
+    if (
+      delinquentGate(
+        Boolean(rows[0].delinquent),
+        Boolean(rows[0].delinquent_can_access),
+        Boolean(rows[0].delinquent_can_participate),
+      ) === 'blocked'
+    ) {
+      response.status(403).json({
+        error:
+          'Este contrato está inadimplente e o acesso ao portal está fechado.',
       })
       return
     }
@@ -581,15 +596,23 @@ app.get(
         current.status === 'waiting' &&
         current.offerStatus === 'pending' &&
         current.offeredInstallments > 0
+      const drawExcluded =
+        delinquentGate(
+          current.delinquent,
+          session.delinquentCanAccess,
+          session.delinquentCanParticipate,
+        ) === 'watch'
       you = {
         ...yours,
         canSetOffer:
+          !drawExcluded &&
           rankingOpen &&
           current.offerStatus !== 'withdrawn' &&
           current.offerStatus !== 'confirmed' &&
           remainingOffer >= 10,
-        canConfirm: lockedDecision,
-        canWithdraw: lockedDecision,
+        canConfirm: !drawExcluded && lockedDecision,
+        canWithdraw: !drawExcluded && lockedDecision,
+        drawExcluded,
         offerDecisionUntil: openDeadline
           ? offerDecisionUntil(current.offerSelectedAt, openDeadline)
           : null,
@@ -682,7 +705,8 @@ app.post(
         await expireUnconfirmedOffers(client)
         const { rows } = await client.query(
           `SELECT e.*, s.status AS session_status,
-                  s.confirmation_deadline, s.locked_at
+                  s.confirmation_deadline, s.locked_at,
+                  s.delinquent_can_access, s.delinquent_can_participate
              FROM anticipation_entries e
              JOIN anticipation_sessions s ON s.id = e.session_id
             WHERE e.id = $1 AND e.session_id = $2
@@ -701,6 +725,18 @@ app.post(
         }
         if (entry.offer_status === 'withdrawn') {
           throw new ApiError(409, 'Esta antecipação já foi recusada.')
+        }
+        if (
+          delinquentGate(
+            Boolean(entry.delinquent),
+            Boolean(entry.delinquent_can_access),
+            Boolean(entry.delinquent_can_participate),
+          ) !== 'participate'
+        ) {
+          throw new ApiError(
+            409,
+            'Este contrato está inadimplente e não participa do sorteio.',
+          )
         }
         const selectedAt = entry.offer_selected_at
           ? new Date(String(entry.offer_selected_at)).toISOString()
@@ -1112,6 +1148,7 @@ function anticipationEntryData(row: Record<string, unknown>) {
     offerSelectedAt: row.offer_selected_at
       ? new Date(String(row.offer_selected_at)).toISOString()
       : undefined,
+    delinquent: Boolean(row.delinquent),
     apartmentId: row.apartment_id ? String(row.apartment_id) : undefined,
     createdAt: new Date(String(row.created_at)).toISOString(),
   }
@@ -1144,6 +1181,7 @@ async function anticipationSessionData(
     [row.id],
   )
   const entries = rows.map(anticipationEntryData)
+  const delinquentCanParticipate = Boolean(row.delinquent_can_participate)
   return {
     id: String(row.id),
     building: String(row.building),
@@ -1166,7 +1204,14 @@ async function anticipationSessionData(
     portalPath: '/associado',
     entries,
     nextAnticipator:
-      entries.find((entry) => entry.status === 'waiting') ?? null,
+      entries.find(
+        (entry) =>
+          entry.status === 'waiting' &&
+          delinquentGate(entry.delinquent, false, delinquentCanParticipate) ===
+            'participate',
+      ) ?? null,
+    delinquentCanAccess: Boolean(row.delinquent_can_access),
+    delinquentCanParticipate,
     createdBy: String(row.created_by_name ?? 'Administrador'),
     createdAt: new Date(String(row.created_at)).toISOString(),
     closedAt: row.closed_at
@@ -1313,12 +1358,20 @@ async function authenticateAssociate(
   const tokenHash = hashToken(token)
   const known = await associateAuthCache.get(tokenHash, async () => {
     const identity = await lookupAssociateSession(tokenHash)
+    if (identity === 'blocked') throw new AssociateDelinquentBlocked()
     if (!identity) throw new AssociateSessionMissing()
     return identity
   }).catch((error: unknown) => {
+    if (error instanceof AssociateDelinquentBlocked) return 'blocked' as const
     if (error instanceof AssociateSessionMissing) return null
     throw error
   })
+  if (known === 'blocked') {
+    response.status(403).json({
+      error: 'Este contrato está inadimplente e o acesso ao portal está fechado.',
+    })
+    return
+  }
   if (!known) {
     await pool.query(
       'DELETE FROM associate_portal_sessions WHERE token_hash = $1',
@@ -1335,6 +1388,7 @@ async function authenticateAssociate(
 }
 
 class AssociateSessionMissing extends Error {}
+class AssociateDelinquentBlocked extends Error {}
 
 /** Quem já entrou no portal fica 10s sem nova ida ao banco a cada consulta. */
 const associateAuthCache = createSharedCache<{
@@ -1344,7 +1398,8 @@ const associateAuthCache = createSharedCache<{
 
 async function lookupAssociateSession(tokenHash: string) {
   const { rows } = await pool.query(
-    `SELECT p.entry_id, p.session_id
+    `SELECT p.entry_id, p.session_id,
+            e.delinquent, s.delinquent_can_access, s.delinquent_can_participate
        FROM associate_portal_sessions p
        JOIN anticipation_entries e ON e.id = p.entry_id
        JOIN anticipation_sessions s ON s.id = p.session_id
@@ -1360,6 +1415,15 @@ async function lookupAssociateSession(tokenHash: string) {
     [tokenHash],
   )
   if (!rows[0]) return null
+  if (
+    delinquentGate(
+      Boolean(rows[0].delinquent),
+      Boolean(rows[0].delinquent_can_access),
+      Boolean(rows[0].delinquent_can_participate),
+    ) === 'blocked'
+  ) {
+    return 'blocked' as const
+  }
   return {
     entryId: String(rows[0].entry_id),
     sessionId: String(rows[0].session_id),
@@ -1695,6 +1759,14 @@ app.patch('/api/anticipation-sessions/:id', requireAdmin, async (req, res) => {
   )
   const periodRequested =
     req.body?.startsAt !== undefined || req.body?.endsAt !== undefined
+  const delinquentCanAccess =
+    typeof req.body?.delinquentCanAccess === 'boolean'
+      ? req.body.delinquentCanAccess
+      : undefined
+  const delinquentCanParticipate =
+    typeof req.body?.delinquentCanParticipate === 'boolean'
+      ? req.body.delinquentCanParticipate
+      : undefined
   const startsAt = periodRequested
     ? normalizeConfirmationDeadline(req.body?.startsAt)
     : undefined
@@ -1730,7 +1802,9 @@ app.patch('/api/anticipation-sessions/:id', requireAdmin, async (req, res) => {
     liveUrl === undefined &&
     anticipatorSlots === undefined &&
     confirmationDeadline === undefined &&
-    !periodRequested
+    !periodRequested &&
+    delinquentCanAccess === undefined &&
+    delinquentCanParticipate === undefined
   ) {
     res.status(400).json({ error: 'Nenhuma alteração informada.' })
     return
@@ -1827,6 +1901,8 @@ app.patch('/api/anticipation-sessions/:id', requireAdmin, async (req, res) => {
               END,
               starts_at = COALESCE($7::timestamptz, starts_at),
               ends_at = COALESCE($8::timestamptz, ends_at),
+              delinquent_can_access = COALESCE($9, delinquent_can_access),
+              delinquent_can_participate = COALESCE($10, delinquent_can_participate),
               updated_at = now()
         WHERE id = $1
         RETURNING *`,
@@ -1839,8 +1915,12 @@ app.patch('/api/anticipation-sessions/:id', requireAdmin, async (req, res) => {
         confirmationDeadline,
         startsAt ?? null,
         endsAt ?? null,
+        delinquentCanAccess ?? null,
+        delinquentCanParticipate ?? null,
       ],
     )
+    portalSessionCache.delete(String(req.params.id))
+    associateAuthCache.clear()
     await expireUnconfirmedOffers(client)
     return anticipationSessionData(client, updated.rows[0])
   })
@@ -2083,6 +2163,44 @@ app.post(
       })
     })
     res.json(session)
+  },
+)
+
+app.patch(
+  '/api/anticipation-sessions/:sessionId/entries/:entryId',
+  requireAdmin,
+  async (req, res) => {
+    if (typeof req.body?.delinquent !== 'boolean') {
+      res.status(400).json({ error: 'Informe se o contrato está inadimplente.' })
+      return
+    }
+    const updated = await pool.query(
+      `UPDATE anticipation_entries
+          SET delinquent = $3
+        WHERE id = $1
+          AND session_id = $2
+          AND EXISTS (
+            SELECT 1 FROM anticipation_sessions
+             WHERE id = $2 AND status <> 'closed'
+          )`,
+      [req.params.entryId, req.params.sessionId, req.body.delinquent],
+    )
+    if (!updated.rowCount) {
+      res.status(409).json({
+        error: 'Não foi possível marcar este contrato. A sessão pode estar encerrada.',
+      })
+      return
+    }
+    portalSessionCache.delete(String(req.params.sessionId))
+    associateAuthCache.clear()
+    const { rows } = await pool.query(
+      `SELECT s.*, u.username AS created_by_name
+         FROM anticipation_sessions s
+         LEFT JOIN app_users u ON u.id = s.created_by
+        WHERE s.id = $1`,
+      [req.params.sessionId],
+    )
+    res.json(await anticipationSessionData(pool, rows[0]))
   },
 )
 
@@ -2336,6 +2454,31 @@ app.put(
       response.status(400).json({
         error:
           'Código de associado inválido para o grupo desta torre. Use grupo + bolinha em 4 dígitos.',
+      })
+      return
+    }
+    const delinquentDraw = await pool.query(
+      `SELECT e.delinquent, s.delinquent_can_access, s.delinquent_can_participate
+         FROM anticipation_entries e
+         JOIN anticipation_sessions s ON s.id = e.session_id
+        WHERE s.building = $1
+          AND s.status <> 'closed'
+          AND e.associate_code = $2
+        ORDER BY CASE s.status WHEN 'active' THEN 0 ELSE 1 END, s.created_at DESC
+        LIMIT 1`,
+      [building, ball],
+    )
+    const delinquentRow = delinquentDraw.rows[0]
+    if (
+      delinquentRow &&
+      delinquentGate(
+        Boolean(delinquentRow.delinquent),
+        Boolean(delinquentRow.delinquent_can_access),
+        Boolean(delinquentRow.delinquent_can_participate),
+      ) !== 'participate'
+    ) {
+      response.status(409).json({
+        error: 'Este contrato está inadimplente e não participa do sorteio.',
       })
       return
     }

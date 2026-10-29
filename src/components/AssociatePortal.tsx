@@ -734,6 +734,11 @@ export function AssociatePortal() {
       className={`associate-portal is-open${view.status === 'active' ? ' is-live' : ''}`}
       ref={portalRef}
     >
+      {you?.drawExcluded && (
+        <p className="delinquent-banner" role="status">
+          Você está inadimplente e não participará do sorteio.
+        </p>
+      )}
       {you && view.status !== 'active' && (
         <button
           type="button"

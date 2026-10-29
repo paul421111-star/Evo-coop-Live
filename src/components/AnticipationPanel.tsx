@@ -21,6 +21,7 @@ import type {
 } from '../config/anticipation'
 import type { BuildingKind } from '../config/building'
 import type { DrawGroup } from '../config/drawGroups'
+import { DelinquentPolicy } from './DelinquentPolicy'
 
 type Props = {
   building: BuildingKind
@@ -36,6 +37,11 @@ type Props = {
   onStatus: (status: AnticipationSession['status']) => Promise<void>
   onSaveLiveUrl?: (liveUrl: string) => Promise<void>
   onSaveSlots?: (anticipatorSlots: number) => Promise<void>
+  onDelinquentPolicy?: (policy: {
+    delinquentCanAccess?: boolean
+    delinquentCanParticipate?: boolean
+  }) => Promise<void>
+  onMarkDelinquent?: (entryId: string, delinquent: boolean) => Promise<void>
   onOpenBoard?: () => void
 }
 
@@ -65,6 +71,8 @@ export function AnticipationPanel({
   onResetRanking,
   onStatus,
   onSaveLiveUrl,
+  onDelinquentPolicy,
+  onMarkDelinquent,
   onOpenBoard,
 }: Props) {
   const [expanded, setExpanded] = useState(true)
@@ -280,12 +288,36 @@ export function AnticipationPanel({
                           ? `Apto. ${item.apartmentId}`
                           : 'Abdicou'}
                     </span>
-                    {admin && session.status === 'draft' ? (
+                    {admin && session.status !== 'closed' && onMarkDelinquent ? (
+                      <span className="board-row-actions">
+                        <button
+                          type="button"
+                          className={`delinquent-mark${item.delinquent ? ' is-on' : ''}`}
+                          aria-pressed={item.delinquent}
+                          disabled={busy}
+                          onClick={() => void onMarkDelinquent(item.id, !item.delinquent)}
+                        >
+                          {item.delinquent ? 'Inadimplente' : 'Marcar'}
+                        </button>
+                        {session.status === 'draft' && (
+                          <button type="button" className="icon-button" aria-label={`Remover ${item.associateCode}`} onClick={() => void onRemoveEntry(item.id)}><Trash2 size={13} /></button>
+                        )}
+                      </span>
+                    ) : admin && session.status === 'draft' ? (
                       <button type="button" className="icon-button" aria-label={`Remover ${item.associateCode}`} onClick={() => void onRemoveEntry(item.id)}><Trash2 size={13} /></button>
                     ) : <span />}
                   </div>
                 ))}
               </div>
+
+              {admin && session.status !== 'closed' && onDelinquentPolicy && (
+                <DelinquentPolicy
+                  canAccess={session.delinquentCanAccess}
+                  canParticipate={session.delinquentCanParticipate}
+                  busy={busy}
+                  onChange={(policy) => void onDelinquentPolicy(policy)}
+                />
+              )}
 
               {admin && (
                 <div className="anticipation-session-actions">

@@ -26,6 +26,7 @@ import {
 import { BUILDING_CONFIGS, type BuildingKind } from '../config/building'
 import type { DrawGroup } from '../config/drawGroups'
 import { api } from '../api/client'
+import { DelinquentPolicy } from './DelinquentPolicy'
 import { AnticipationHistoryView } from './AnticipationHistoryView'
 
 type Props = {
@@ -46,6 +47,11 @@ type Props = {
   onSaveConfirmationDeadline: (
     confirmationDeadline: string | null,
   ) => Promise<void>
+  onDelinquentPolicy: (policy: {
+    delinquentCanAccess?: boolean
+    delinquentCanParticipate?: boolean
+  }) => Promise<void>
+  onMarkDelinquent: (entryId: string, delinquent: boolean) => Promise<void>
   onOpenMap: () => void
 }
 
@@ -89,6 +95,8 @@ export function RankingBoard({
   onSaveLiveUrl,
   onSaveSlots,
   onSaveConfirmationDeadline,
+  onDelinquentPolicy,
+  onMarkDelinquent,
   onOpenMap,
 }: Props) {
   const [title, setTitle] = useState('')
@@ -653,6 +661,14 @@ export function RankingBoard({
                   {copied ? 'Link copiado' : 'Copiar link do portal'}
                 </button>
               </div>
+              {session.status !== 'closed' && (
+                <DelinquentPolicy
+                  canAccess={session.delinquentCanAccess}
+                  canParticipate={session.delinquentCanParticipate}
+                  busy={busy}
+                  onChange={(policy) => void onDelinquentPolicy(policy)}
+                />
+              )}
             </section>
           )}
 
@@ -852,15 +868,32 @@ export function RankingBoard({
                               ? 'Não vai antecipar'
                               : 'Aguardando'}
                     </span>
-                    {admin && session.status === 'draft' ? (
-                      <button
-                        type="button"
-                        className="icon-button"
-                        aria-label={`Remover ${item.associateCode}`}
-                        onClick={() => void onRemoveEntry(item.id)}
-                      >
-                        <Trash2 size={14} />
-                      </button>
+                    {admin && session.status !== 'closed' ? (
+                      <span className="board-row-actions">
+                        <button
+                          type="button"
+                          className={`delinquent-mark${item.delinquent ? ' is-on' : ''}`}
+                          aria-pressed={item.delinquent}
+                          disabled={busy}
+                          onClick={() =>
+                            void onMarkDelinquent(item.id, !item.delinquent)
+                          }
+                        >
+                          {item.delinquent
+                            ? 'Inadimplente'
+                            : 'Marcar inadimplente'}
+                        </button>
+                        {session.status === 'draft' && (
+                          <button
+                            type="button"
+                            className="icon-button"
+                            aria-label={`Remover ${item.associateCode}`}
+                            onClick={() => void onRemoveEntry(item.id)}
+                          >
+                            <Trash2 size={14} />
+                          </button>
+                        )}
+                      </span>
                     ) : (
                       <span />
                     )}

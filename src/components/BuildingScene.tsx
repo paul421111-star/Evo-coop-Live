@@ -39,6 +39,8 @@ type Props = {
   highlightAvailability: boolean
   sceneTheme?: 'dark' | 'light'
   locked?: boolean
+  /** A caixa do apartamento fica no mapa do operador, fora da fachada. */
+  pinSelectedLabel?: boolean
   onSelect: (id: string) => void
   onActivate: (id: string) => void
 }
@@ -564,11 +566,13 @@ export function BuildingScene(props: Props) {
       <group rotation={[0, props.config.mapRotationY ?? 0, 0]}>
         <Suspense fallback={<LoadingModel />}>
           <BuildingModel config={props.config} />
-          <SelectedApartmentLabel
-            config={props.config}
-            statuses={props.statuses}
-            selectedId={props.selectedId}
-          />
+          {props.pinSelectedLabel !== false && (
+            <SelectedApartmentLabel
+              config={props.config}
+              statuses={props.statuses}
+              selectedId={props.selectedId}
+            />
+          )}
         </Suspense>
         <ApartmentVolumes
           config={props.config}

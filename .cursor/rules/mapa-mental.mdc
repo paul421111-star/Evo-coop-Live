@@ -1,0 +1,13 @@
+---
+description: Ler e atualizar o mapa mental do projeto antes de vasculhar o código
+alwaysApply: true
+---
+
+# Mapa mental
+
+`MAPA-MENTAL.md`, na raiz, é a memória do projeto.
+
+- Antes de procurar no código, leia o mapa. Abra só os arquivos que ele indicar para a tarefa.
+- Depois de mudar comportamento, arquitetura, regra de negócio ou restrição, atualize a seção correspondente e a data do topo. Uma frase. Não copie código.
+- Ideia nova entra em **Em aberto**. Ideia entregue sai de lá.
+- Não grave senha, token, CPF, telefone nem conteúdo de `.env` no mapa.

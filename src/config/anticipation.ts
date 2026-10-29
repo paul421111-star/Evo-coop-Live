@@ -21,6 +21,8 @@ export type AnticipationEntry = {
   status: AnticipationEntryStatus
   offerStatus: AnticipationOfferStatus
   offerSelectedAt?: string
+  /** Marcado pelo administrador. Só fica fora do sorteio se a sessão não permitir. */
+  delinquent: boolean
   apartmentId?: string
   createdAt: string
 }
@@ -52,6 +54,10 @@ export type AnticipationSession = {
   closedAt?: string
   /** Quantidade reaproveitada da sessão anterior ao criar esta sessão. */
   carriedOverCount?: number
+  /** Inadimplente entra no portal e vê o aviso de que não participa. */
+  delinquentCanAccess: boolean
+  /** Inadimplente entra na fila e pode ser chamado. */
+  delinquentCanParticipate: boolean
 }
 
 export type AnticipationSessionInput = {
@@ -105,6 +111,20 @@ export function rankAnticipators<T extends AnticipationEntryInput>(
         right.totalInstallments - left.totalInstallments ||
         Number(left.associateCode) - Number(right.associateCode),
     )
+}
+
+/**
+ * Contrato inadimplente: participa, só assiste o portal, ou nem entra.
+ * Participar vale mais do que apenas acessar.
+ */
+export function delinquentGate(
+  delinquent: boolean,
+  canAccess: boolean,
+  canParticipate: boolean,
+): 'participate' | 'watch' | 'blocked' {
+  if (!delinquent || canParticipate) return 'participate'
+  if (canAccess) return 'watch'
+  return 'blocked'
 }
 
 export function oppositeChoiceSource(source: ChoiceSource): ChoiceSource {
@@ -208,5 +228,7 @@ export type AssociatePortalView = {
     offerDecisionUntil: string | null
     hasWhatsappPhone: boolean
     whatsappPhoneMasked: string
+    /** Inadimplente com o sorteio fechado para ele. */
+    drawExcluded: boolean
   }) | null
 }

@@ -638,10 +638,6 @@ select:focus-visible {
   font-size: 1.7rem;
 }
 
-.floor-plan-view .canvas-turn-sign.is-draw {
-  max-width: min(460px, 88%);
-}
-
 .active-turn-rule {
   color: #52606d;
   font-size: 0.72rem;
@@ -941,7 +937,32 @@ select:focus-visible {
 }
 
 .floor-plan-view {
+  display: flex;
+  flex-direction: column;
   background: #0b1824;
+}
+
+.floor-plan-view:has(.floor-plan-toolbar) {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  grid-template-rows: auto minmax(0, 1fr);
+  column-gap: 8px;
+}
+
+.floor-plan-stage {
+  position: relative;
+  flex: 1;
+  min-height: 0;
+}
+
+.floor-plan-view:has(.floor-plan-toolbar) .floor-plan-stage {
+  grid-column: 1;
+  grid-row: 2;
+}
+
+.floor-plan-stage > div {
+  width: 100%;
+  height: 100%;
 }
 
 .floor-plan-heading {
@@ -1700,13 +1721,116 @@ select:focus-visible {
   gap: 8px;
   position: absolute;
   z-index: 4;
-  top: 12px;
-  left: 12px;
+  top: 14px;
+  left: 14px;
+  max-width: min(460px, calc(100% - 210px));
   padding: 8px 11px;
   border: 1px solid;
   border-radius: 10px;
   backdrop-filter: blur(9px);
   pointer-events: none;
+}
+
+/* Vez atual e título da planta lado a lado, no topo da planta ampliada. */
+.floor-plan-toolbar {
+  display: flex;
+  flex-direction: row;
+  align-items: flex-start;
+  justify-content: flex-start;
+  gap: 8px;
+  position: relative;
+  z-index: 5;
+  grid-column: 1 / -1;
+  grid-row: 1;
+  flex: none;
+  margin: 10px 10px 0;
+}
+
+.floor-plan-toolbar .canvas-turn-sign {
+  position: relative;
+  top: auto;
+  left: auto;
+  flex: 0 0 auto;
+  width: max-content;
+  max-width: 100%;
+  min-width: 0;
+}
+
+.floor-plan-toolbar .canvas-turn-sign small {
+  display: none;
+}
+
+.floor-plan-toolbar .floor-plan-heading {
+  position: relative;
+  top: auto;
+  right: auto;
+  left: auto;
+  flex: none;
+  align-self: stretch;
+  align-items: center;
+  gap: 10px;
+  margin-left: auto;
+  padding: 8px 11px;
+}
+
+.floor-plan-sunrise {
+  position: relative;
+  z-index: 5;
+  display: flex;
+  flex-direction: column;
+  grid-column: 2;
+  grid-row: 2;
+  align-self: start;
+  gap: 8px;
+  margin: 8px 10px 0 0;
+  pointer-events: none;
+}
+
+.floor-plan-view .canvas-solar-card.is-sunset {
+  position: absolute;
+  left: 0;
+  bottom: 0;
+}
+
+.floor-plan-view .canvas-solar-stack:has(.is-sunset) {
+  justify-content: flex-end;
+}
+
+.floor-plan-toolbar .floor-plan-heading small {
+  display: none;
+}
+
+.tower-apt-label {
+  position: absolute;
+  z-index: 5;
+  top: 14px;
+  right: 70px;
+  min-width: 118px;
+  padding: 9px 12px;
+  border: 1px solid rgb(255 255 255 / 25%);
+  border-radius: 9px;
+  background: rgb(5 17 29 / 87%);
+  color: white;
+  text-align: center;
+  box-shadow: 0 8px 24px rgb(0 0 0 / 30%);
+  backdrop-filter: blur(8px);
+  pointer-events: none;
+}
+
+.tower-apt-label strong,
+.tower-apt-label span {
+  display: block;
+  white-space: nowrap;
+}
+
+.tower-apt-label strong {
+  font: 700 11px 'Manrope', sans-serif;
+}
+
+.tower-apt-label span {
+  margin-top: 2px;
+  color: #9fc0d0;
+  font-size: 9px;
 }
 
 .canvas-turn-sign .turn-sign-copy {
@@ -1740,9 +1864,8 @@ select:focus-visible {
   background: rgb(5 17 29 / 55%);
 }
 
-.floor-plan-view .canvas-turn-sign {
-  top: 58px;
-  max-width: min(420px, 86%);
+.floor-plan-view:has(.floor-plan-toolbar) .floor-plan-tabs {
+  top: 84px;
 }
 
 .canvas-turn-sign .turn-sign-label {
@@ -4367,7 +4490,7 @@ select:focus-visible {
 .ranking-row {
   min-width: 500px;
   display: grid;
-  grid-template-columns: 32px 1.35fr 0.85fr 0.8fr 30px;
+  grid-template-columns: 32px 1.35fr 0.85fr 0.8fr auto;
   gap: 7px;
   align-items: center;
   padding: 8px 5px;
@@ -4825,6 +4948,73 @@ select:focus-visible {
   line-height: 1.55;
 }
 
+.delinquent-policy {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 10px;
+  margin-top: 14px;
+}
+
+.delinquent-policy button {
+  display: grid;
+  gap: 4px;
+  padding: 12px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: #fff;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.delinquent-policy button b {
+  font-size: 0.92rem;
+}
+
+.delinquent-policy button small {
+  color: var(--muted);
+  font-size: 0.75rem;
+  line-height: 1.4;
+}
+
+.delinquent-policy button.is-on {
+  border-color: #b45309;
+  background: #fff7ed;
+}
+
+.delinquent-banner {
+  margin: 0 0 14px;
+  padding: 12px 14px;
+  border: 1px solid #b45309;
+  border-radius: 12px;
+  background: #fff7ed;
+  color: #9a3412;
+  font-weight: 650;
+}
+
+.delinquent-mark {
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  padding: 4px 8px;
+  background: #fff;
+  color: var(--muted);
+  font-size: 0.72rem;
+  cursor: pointer;
+}
+
+.delinquent-mark.is-on {
+  border-color: #b45309;
+  background: #fff7ed;
+  color: #9a3412;
+}
+
+.board-row-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 6px;
+}
+
 .board-empty {
   margin: 0;
   padding: 16px;
@@ -5017,7 +5207,7 @@ select:focus-visible {
   display: grid;
   grid-template-columns:
     34px minmax(150px, 1.5fr) repeat(3, minmax(76px, 0.58fr))
-    64px minmax(120px, 0.9fr) 34px;
+    64px minmax(120px, 0.9fr) auto;
   align-items: center;
   gap: 10px;
 }
@@ -5520,8 +5710,10 @@ select:focus-visible {
     font-weight: 600;
   }
 
-  .board-state {
+  .board-state,
+  .board-row-actions {
     grid-column: 2 / -1;
+    justify-content: flex-start;
   }
 }
 

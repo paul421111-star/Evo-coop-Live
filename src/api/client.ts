@@ -368,6 +368,28 @@ export const api = {
         body: JSON.stringify({ startsAt, endsAt }),
       },
     ),
+  setDelinquentPolicy: (
+    id: string,
+    policy: {
+      delinquentCanAccess?: boolean
+      delinquentCanParticipate?: boolean
+    },
+  ) =>
+    request<AnticipationSession>(
+      `/api/anticipation-sessions/${encodeURIComponent(id)}`,
+      {
+        method: 'PATCH',
+        body: JSON.stringify(policy),
+      },
+    ),
+  setEntryDelinquent: (sessionId: string, entryId: string, delinquent: boolean) =>
+    request<AnticipationSession>(
+      `/api/anticipation-sessions/${encodeURIComponent(sessionId)}/entries/${encodeURIComponent(entryId)}`,
+      {
+        method: 'PATCH',
+        body: JSON.stringify({ delinquent }),
+      },
+    ),
   addAnticipationEntry: (sessionId: string, input: AnticipationEntryInput) =>
     request<AnticipationSession>(
       `/api/anticipation-sessions/${encodeURIComponent(sessionId)}/entries`,

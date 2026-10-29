@@ -449,6 +449,13 @@ ALTER TABLE associate_phones
 ALTER TABLE anticipation_entries
   ADD COLUMN IF NOT EXISTS email varchar(180);
 
+ALTER TABLE anticipation_entries
+  ADD COLUMN IF NOT EXISTS delinquent boolean NOT NULL DEFAULT false;
+ALTER TABLE anticipation_sessions
+  ADD COLUMN IF NOT EXISTS delinquent_can_access boolean NOT NULL DEFAULT false;
+ALTER TABLE anticipation_sessions
+  ADD COLUMN IF NOT EXISTS delinquent_can_participate boolean NOT NULL DEFAULT false;
+
 CREATE TABLE IF NOT EXISTS collection_call_phones (
   id text PRIMARY KEY,
   name varchar(120) NOT NULL,
