@@ -5,11 +5,9 @@ import {
   KeyRound,
   Layers3,
   List,
-  Lock,
   Maximize,
   Minimize,
   Radio,
-  UserRound,
   X,
 } from 'lucide-react'
 import { api, type AssociateDrawSnapshot } from '../api/client'
@@ -247,11 +245,8 @@ export function AssociateDrawPanel({
 
       <div className="draw-board-stats">
         <Stat icon={<Building2 size={16} />} value={stats.total} label="Unidades" />
-        <Stat icon={<UserRound size={16} />} value={stats.calls} label="Chamadas" />
         <Stat value={stats.available} label="Disponíveis" tone="available" />
         <Stat value={stats.defined} label="Definidos" tone="defined" />
-        <Stat value={stats.declined} label="Abdicados" tone="declined" />
-        <Stat icon={<Lock size={16} />} value={stats.blocked} label="Bloqueados" />
       </div>
 
       <div className="draw-board-body">

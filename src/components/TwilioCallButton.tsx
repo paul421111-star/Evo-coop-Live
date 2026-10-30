@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import { Headphones, Mic, Phone, PhoneOff, Radio, Undo2 } from 'lucide-react'
 import { Device } from '@twilio/voice-sdk'
 import { api } from '../api/client'
+import { formatWhatsappPhone } from '../config/collectionNotice'
 import {
   loadCallAudioRouting,
   type CallAudioRouting,
@@ -22,6 +23,7 @@ type Props = {
   audioRouting?: CallAudioRouting
   locked?: boolean
   onActiveChange?: (active: boolean) => void
+  canGoLive?: boolean
 }
 
 type CallMode =
@@ -71,6 +73,7 @@ export function TwilioCallButton({
   audioRouting = loadCallAudioRouting(),
   locked = false,
   onActiveChange,
+  canGoLive = true,
 }: Props) {
   const [fetchedConfigured, setConfigured] = useState<boolean | null>(null)
   const [fetchedHint, setHint] = useState('')
@@ -92,6 +95,16 @@ export function TwilioCallButton({
   const routedModeRef = useRef<RoutedCallMode>('private')
   const desiredModeRef = useRef<RoutedCallMode>('private')
   const talkbackHeldRef = useRef(false)
+  const lineRef = useRef('')
+  const canGoLiveRef = useRef(canGoLive)
+  canGoLiveRef.current = canGoLive
+
+  const releaseLine = () => {
+    const claimed = lineRef.current
+    lineRef.current = ''
+    if (!claimed) return
+    void api.releaseVoiceLine(claimed).catch(() => undefined)
+  }
 
   useEffect(() => {
     if (knownConfigured !== undefined) return
@@ -120,6 +133,9 @@ export function TwilioCallButton({
     () => () => {
       callRef.current?.disconnect()
       deviceRef.current?.destroy()
+      const claimed = lineRef.current
+      lineRef.current = ''
+      if (claimed) void api.releaseVoiceLine(claimed).catch(() => undefined)
       if (activeBrowserCall === callOwner) activeBrowserCall = ''
       onActiveChange?.(false)
     },
@@ -182,10 +198,29 @@ export function TwilioCallButton({
     switchingRef.current = false
     talkbackHeldRef.current = false
     if (activeBrowserCall === callOwner) activeBrowserCall = ''
+    releaseLine()
     onActiveChange?.(false)
   }
 
+  useEffect(() => {
+    if (!live) return
+    const timer = window.setInterval(() => {
+      const claimed = lineRef.current
+      if (!claimed) return
+      void api.claimVoiceLine(claimed).catch(() => undefined)
+    }, 20_000)
+    return () => window.clearInterval(timer)
+  }, [live])
+
   const setCallRoute = async (target: RoutedCallMode) => {
+    if (
+      target !== 'private' &&
+      routedModeRef.current === 'private' &&
+      !canGoLiveRef.current
+    ) {
+      setError('Marque Conferido antes de colocar o associado no ar.')
+      return
+    }
     desiredModeRef.current = target
     if (switchingRef.current) return
     const device = deviceRef.current
@@ -319,10 +354,14 @@ export function TwilioCallButton({
         await device.audio.speakerDevices.set(speaker.deviceId).catch(() => undefined)
       }
       setNotice(`Microfone da ligação: ${microphoneRef.current}.`)
+      const claimed = await api.claimVoiceLine()
+      lineRef.current = claimed.phone
+      setNotice(`Linha ${formatWhatsappPhone(claimed.phone)}.`)
       const current = (await device.connect({
         params: {
           To: destination,
           Record: recordCalls ? '1' : '0',
+          CallerLine: claimed.phone,
         },
         rtcConfiguration:
           iceServers.length > 0
@@ -469,6 +508,12 @@ export function TwilioCallButton({
             <button
               type="button"
               className="is-on-air"
+              disabled={!canGoLive}
+              title={
+                canGoLive
+                  ? 'Colocar o associado no ar'
+                  : 'Marque Conferido antes de colocar no ar.'
+              }
               onClick={() => void setCallRoute('onAir')}
             >
               <Radio size={14} /> Colocar no ar

@@ -220,6 +220,95 @@ select:focus-visible {
   margin-left: auto;
 }
 
+.logged-associates {
+  position: relative;
+}
+
+.logged-associates > button {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 32px;
+  padding: 0 10px 0 12px;
+  border: 1px solid #c5d4e0;
+  border-radius: 999px;
+  background: #fff;
+  color: #0f172a;
+  font-size: 12px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.logged-associates > button.is-open {
+  border-color: #0d6a9c;
+  color: #0d6a9c;
+}
+
+.logged-associates > button b {
+  min-width: 1.4em;
+  padding: 1px 6px;
+  border-radius: 999px;
+  background: #0d6a9c;
+  color: #fff;
+  font-size: 11px;
+  text-align: center;
+}
+
+.logged-associates-panel {
+  position: absolute;
+  top: calc(100% + 8px);
+  right: 0;
+  z-index: 30;
+  width: min(320px, 78vw);
+  max-height: 360px;
+  overflow: auto;
+  padding: 12px 14px;
+  border: 1px solid #cfd8e1;
+  border-radius: 14px;
+  background: #fff;
+  box-shadow: 0 16px 40px rgb(15 23 42 / 16%);
+}
+
+.logged-associates-panel h2 {
+  margin: 0 0 8px;
+  font-size: 13px;
+}
+
+.logged-associates-panel p {
+  margin: 0;
+  color: #64748b;
+  font-size: 12px;
+}
+
+.logged-associates-panel ol {
+  display: grid;
+  gap: 0;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.logged-associates-panel li {
+  display: grid;
+  gap: 1px;
+  padding: 8px 0;
+  border-top: 1px solid #e8eef3;
+}
+
+.logged-associates-panel strong,
+.logged-associates-panel span {
+  font-size: 13px;
+}
+
+.logged-associates-panel span {
+  color: #334155;
+}
+
+.logged-associates-panel small {
+  color: #64748b;
+  font-size: 11px;
+}
+
 .current-user {
   display: flex;
   align-items: center;
@@ -5058,6 +5147,11 @@ select:focus-visible {
   cursor: default;
 }
 
+.portal-contact-choice.is-active {
+  border-color: #0f766e;
+  background: #f0fdfa;
+}
+
 .portal-contact-choice small {
   color: #64748b;
   font-size: 12px;
@@ -8165,7 +8259,7 @@ select:focus-visible {
   display: flex;
   flex-direction: column;
   gap: 12px;
-  width: min(1280px, 100%);
+  width: 100%;
   flex: 1;
   min-height: 0;
   height: auto;
@@ -8657,11 +8751,38 @@ select:focus-visible {
 
 .cobranca-calls {
   display: grid;
-  grid-template-rows: auto auto 1fr;
+  grid-template-columns: minmax(320px, 400px) minmax(0, 1fr);
+  flex: 1;
   gap: 12px;
   min-height: 0;
-  padding: 16px;
+  padding: 12px;
   overflow: hidden;
+}
+
+.cobranca-calls-setup {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  min-height: 0;
+  overflow: auto;
+}
+
+.cobranca-calls-setup .call-audio-device-grid,
+.cobranca-calls-setup .cobranca-voice-lines ul,
+.cobranca-calls-setup .cobranca-calls-add {
+  grid-template-columns: 1fr;
+}
+
+.cobranca-calls-board {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  min-width: 0;
+  min-height: 0;
+}
+
+.cobranca-calls-board > .cobranca-calls-list:last-child {
+  flex: 1;
 }
 
 .cobranca-calls-team {
@@ -8876,6 +8997,23 @@ select:focus-visible {
   min-height: 0;
 }
 
+.cobranca-calls-list.is-requests {
+  grid-template-rows: auto auto;
+}
+
+.cobranca-calls-list > header h2 {
+  margin: 0;
+  font-size: 1rem;
+}
+
+.cobranca-calls-list li > button {
+  border: 1px solid #d5dee8;
+  border-radius: 10px;
+  padding: 8px 12px;
+  background: #fff;
+  cursor: pointer;
+}
+
 .cobranca-calls-list > header {
   display: flex;
   align-items: center;
@@ -8937,6 +9075,121 @@ select:focus-visible {
   gap: 12px;
   padding: 8px 0;
   border-top: 1px solid #eef2f6;
+}
+
+.cobranca-calls-list ul.is-conference {
+  gap: 10px;
+}
+
+.cobranca-calls-list ul.is-conference li {
+  grid-template-columns: minmax(260px, 1.3fr) minmax(200px, 0.9fr) minmax(190px, 240px);
+  align-items: start;
+  padding: 12px;
+  border: 1px solid #e6edf3;
+  border-radius: 14px;
+  background: #fff;
+}
+
+.cobranca-calls-list ul.is-conference li.is-checked {
+  border-color: #86efac;
+  background: #f7fdf9;
+}
+
+.cobranca-identity {
+  display: grid;
+  gap: 8px;
+  min-width: 0;
+}
+
+.cobranca-identity dl {
+  display: grid;
+  grid-template-columns: 92px minmax(0, 1fr);
+  gap: 3px 8px;
+  margin: 0;
+}
+
+.cobranca-identity dt {
+  color: #64748b;
+  font-size: 0.75rem;
+}
+
+.cobranca-identity dd {
+  margin: 0;
+  font-size: 0.92rem;
+  font-weight: 700;
+  overflow-wrap: anywhere;
+}
+
+.cobranca-checked {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: fit-content;
+  font-weight: 800;
+}
+
+.cobranca-calls-list ul.is-conference .twilio-call {
+  max-width: none;
+  justify-content: flex-start;
+}
+
+.cobranca-calls-list ul.is-conference .twilio-call small {
+  text-align: left;
+}
+
+.cobranca-voice-lines {
+  display: grid;
+  gap: 8px;
+  margin: 0 0 14px;
+  padding: 12px;
+  border: 1px solid #d7e0ea;
+  border-radius: 14px;
+  background: #fff;
+}
+
+.cobranca-voice-lines h2 {
+  margin: 0;
+  font-size: 1.05rem;
+}
+
+.cobranca-voice-lines header p {
+  margin: 2px 0 0;
+  color: #5b6b7c;
+  font-size: 0.88rem;
+}
+
+.cobranca-voice-lines ul {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.cobranca-voice-lines li {
+  display: grid;
+  grid-template-columns: minmax(120px, 1fr) minmax(140px, 1fr) auto;
+  align-items: center;
+  gap: 8px;
+  padding: 8px;
+  border: 1px solid #e6edf3;
+  border-radius: 12px;
+}
+
+.cobranca-voice-lines select {
+  width: 100%;
+  border: 1px solid #d5dee8;
+  border-radius: 10px;
+  padding: 8px 10px;
+  background: #fff;
+  font: inherit;
+}
+
+.cobranca-voice-lines small {
+  color: #08745f;
+  font-size: 0.75rem;
+  white-space: nowrap;
 }
 
 .cobranca-calls-list form {
@@ -9223,10 +9476,24 @@ select:focus-visible {
   cursor: default;
 }
 
+@media (max-width: 1100px) {
+  .cobranca-calls {
+    grid-template-columns: 1fr;
+    overflow: auto;
+  }
+
+  .cobranca-calls-setup {
+    overflow: visible;
+  }
+}
+
 @media (max-width: 900px) {
   .cobranca-layout,
   .cobranca-lances li,
   .cobranca-calls-list li,
+  .cobranca-calls-list ul.is-conference li,
+  .cobranca-voice-lines ul,
+  .cobranca-voice-lines li,
   .cobranca-chat {
     grid-template-columns: 1fr;
   }
@@ -9791,7 +10058,7 @@ select:focus-visible {
 
 .draw-board-stats {
   display: grid;
-  grid-template-columns: repeat(6, minmax(0, 1fr));
+  grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 8px;
   margin: 16px 0;
 }

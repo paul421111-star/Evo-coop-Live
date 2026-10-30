@@ -40,6 +40,7 @@ import { LoginScreen } from './components/LoginScreen'
 import { RankingBoard } from './components/RankingBoard'
 import { CobrancaDesk } from './components/CobrancaDesk'
 import { IssueDesk } from './components/IssueDesk'
+import { LoggedAssociates } from './components/LoggedAssociates'
 import { SiteFooter } from './components/SiteFooter'
 import { SurroundingIcon } from './components/SurroundingIcon'
 import { ContractDigits } from './components/contractDigits'
@@ -1375,6 +1376,12 @@ function App() {
         </div>
 
         <div className="file-actions">
+          {currentUser.role !== 'live' && activeDrawGroup && (
+            <LoggedAssociates
+              building={building}
+              drawGroup={activeDrawGroup}
+            />
+          )}
           <div className="current-user" title={`Conectado como ${currentUser.username}`}>
             <span>{currentUser.username.slice(0, 1).toUpperCase()}</span>
             <div>

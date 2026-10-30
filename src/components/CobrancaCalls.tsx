@@ -1,6 +1,14 @@
 import { useEffect, useState } from 'react'
 import { Download, Plus, Search, Trash2 } from 'lucide-react'
-import { api, type CallContact, type CallPhone, type CallRecording } from '../api/client'
+import {
+  api,
+  type CallContact,
+  type CallPhone,
+  type CallRecording,
+  type PortalCallRequest,
+  type VoiceLine,
+  type VoiceStaff,
+} from '../api/client'
 import { formatWhatsappPhone, phoneFieldValue } from '../config/collectionNotice'
 import type { BuildingKind } from '../config/building'
 import {
@@ -11,6 +19,21 @@ import {
 import { TwilioCallButton } from './TwilioCallButton'
 
 const AGENT_PHONE_KEY = 'evo-coop-agent-phone-id'
+
+function formatCpf(documentNumber: string, documentTail: string) {
+  const digits = documentNumber.replace(/\D/g, '')
+  if (digits.length === 11) {
+    return digits.replace(/(\d{3})(\d{3})(\d{3})(\d{2})/, '$1.$2.$3-$4')
+  }
+  if (/^\d{5}$/.test(documentTail)) return `finais ${documentTail}`
+  return 'Não cadastrado'
+}
+
+function formatBirth(value: string) {
+  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value)
+  if (!match) return 'Não cadastrado'
+  return `${match[3]}/${match[2]}/${match[1]}`
+}
 
 type Props = {
   building: BuildingKind
@@ -26,6 +49,7 @@ export function CobrancaCalls({ building, group }: Props) {
   const [phone, setPhone] = useState('')
   const [search, setSearch] = useState('')
   const [contacts, setContacts] = useState<CallContact[]>([])
+  const [callRequests, setCallRequests] = useState<PortalCallRequest[]>([])
   const [phones, setPhones] = useState<Record<string, string>>({})
   const [loading, setLoading] = useState(true)
   const [busy, setBusy] = useState(false)
@@ -38,6 +62,8 @@ export function CobrancaCalls({ building, group }: Props) {
     loadCallAudioRouting,
   )
   const [activeContract, setActiveContract] = useState('')
+  const [voiceLines, setVoiceLines] = useState<VoiceLine[]>([])
+  const [voiceStaff, setVoiceStaff] = useState<VoiceStaff[]>([])
 
   useEffect(() => {
     void api
@@ -52,12 +78,37 @@ export function CobrancaCalls({ building, group }: Props) {
         setRecordCalls(enabled)
       })
       .catch(() => setConfigured(false))
+    let cancelled = false
+    const loadLines = () => {
+      void api
+        .cobrancaVoiceLines()
+        .then((payload) => {
+          if (cancelled) return
+          setVoiceLines(payload.lines)
+          setVoiceStaff(payload.staff)
+        })
+        .catch(() => undefined)
+    }
+    loadLines()
+    const timer = window.setInterval(loadLines, 5_000)
+    return () => {
+      cancelled = true
+      window.clearInterval(timer)
+    }
   }, [])
 
   useEffect(() => {
     let cancelled = false
     setLoading(true)
     const timer = window.setTimeout(() => {
+      void api
+        .cobrancaCallRequests(building, group)
+        .then((rows) => {
+          if (!cancelled) setCallRequests(rows)
+        })
+        .catch(() => {
+          if (!cancelled) setCallRequests([])
+        })
       void api
         .cobrancaCallContacts(building, group, search.trim())
         .then((rows) => {
@@ -170,6 +221,7 @@ export function CobrancaCalls({ building, group }: Props) {
 
   return (
     <div className="cobranca-calls">
+      <div className="cobranca-calls-setup">
       <section
         className={
           teamPhones.length === 0
@@ -294,6 +346,128 @@ export function CobrancaCalls({ building, group }: Props) {
       </label>
       {error && <p className="login-error">{error}</p>}
 
+      <section className="cobranca-voice-lines">
+        <header>
+          <h2>Números da Twilio</h2>
+          <p>
+            Cada número pode ficar com um usuário ou livre para quem não está
+            em ligação. A conferência começa privada. Com Conferido, a
+            atendente coloca o associado no ar.
+          </p>
+        </header>
+        <ul>
+          {voiceLines.map((line) => (
+            <li key={line.phone}>
+              <strong>{formatWhatsappPhone(line.phone)}</strong>
+              <select
+                aria-label={`Quem usa o número ${formatWhatsappPhone(line.phone)}`}
+                value={line.assignedUserId ?? ''}
+                disabled={busy || line.inUse}
+                onChange={(event) => {
+                  const userId = event.target.value || null
+                  void run(async () => {
+                    await api.assignVoiceLine(line.phone, userId)
+                    const username =
+                      voiceStaff.find((person) => person.id === userId)
+                        ?.username ?? ''
+                    setVoiceLines((current) =>
+                      current.map((item) =>
+                        item.phone === line.phone
+                          ? {
+                              ...item,
+                              assignedUserId: userId,
+                              assignedUsername: username,
+                            }
+                          : item,
+                      ),
+                    )
+                  })
+                }}
+              >
+                <option value="">Quem estiver livre</option>
+                {voiceStaff.map((person) => (
+                  <option key={person.id} value={person.id}>
+                    {person.username}
+                  </option>
+                ))}
+              </select>
+              <small>
+                {line.inUse
+                  ? `Em ligação${line.claimedUsername ? ` · ${line.claimedUsername}` : ''}`
+                  : 'Livre'}
+              </small>
+            </li>
+          ))}
+        </ul>
+      </section>
+      </div>
+
+      <div className="cobranca-calls-board">
+      {callRequests.length > 0 && (
+        <section className="cobranca-calls-list is-requests">
+          <header>
+            <h2>Números novos do portal</h2>
+            <small>
+              O associado informou outro celular. O número do cadastro não muda.
+            </small>
+          </header>
+          <ul>
+            {callRequests.map((request) => (
+              <li key={request.associateCode}>
+                <div>
+                  <strong>Contrato {request.associateCode}</strong>
+                  <small>
+                    {request.participant || 'Sem nome'} ·{' '}
+                    {formatWhatsappPhone(request.phone)}
+                  </small>
+                </div>
+                <TwilioCallButton
+                  phone={request.phone}
+                  associateCode={request.associateCode}
+                  building={building}
+                  recordCalls={recordCalls}
+                  configured={configured}
+                  hint={voiceHint}
+                  onRecorded={reloadRecordings}
+                  audioRouting={audioRouting}
+                  locked={
+                    Boolean(activeContract) &&
+                    activeContract !== request.associateCode
+                  }
+                  onActiveChange={(active) =>
+                    setActiveContract((current) =>
+                      active
+                        ? request.associateCode
+                        : current === request.associateCode
+                          ? ''
+                          : current,
+                    )
+                  }
+                />
+                <button
+                  type="button"
+                  disabled={busy}
+                  onClick={() =>
+                    void run(async () => {
+                      await api.dismissCobrancaCallRequest(
+                        building,
+                        request.associateCode,
+                      )
+                      setCallRequests((current) =>
+                        current.filter(
+                          (item) => item.associateCode !== request.associateCode,
+                        ),
+                      )
+                    })
+                  }
+                >
+                  Tirar da lista
+                </button>
+              </li>
+            ))}
+          </ul>
+        </section>
+      )}
       <section className="cobranca-calls-list">
         <header>
           <label className="cobranca-calls-search">
@@ -321,7 +495,7 @@ export function CobrancaCalls({ building, group }: Props) {
             </button>
           </div>
         </header>
-        <ul>
+        <ul className="is-conference">
           {!loading && contacts.length === 0 && (
             <li className="cobranca-empty">
               Nenhum associado encontrado neste evento.
@@ -330,10 +504,51 @@ export function CobrancaCalls({ building, group }: Props) {
           {contacts.map((contact) => {
             const draft = phones[contact.associateCode] ?? ''
             return (
-              <li key={contact.associateCode}>
-                <div>
+              <li
+                key={contact.associateCode}
+                className={contact.checked ? 'is-checked' : ''}
+              >
+                <div className="cobranca-identity">
                   <strong>Contrato {contact.associateCode}</strong>
-                  <small>{contact.participant || 'Sem nome'}</small>
+                  <dl>
+                    <dt>Nome</dt>
+                    <dd>{contact.participant || 'Não cadastrado'}</dd>
+                    <dt>CPF</dt>
+                    <dd>
+                      {formatCpf(contact.documentNumber, contact.documentTail)}
+                    </dd>
+                    <dt>Nascimento</dt>
+                    <dd>{formatBirth(contact.birthDate)}</dd>
+                  </dl>
+                  <label className="cobranca-checked">
+                    <input
+                      type="checkbox"
+                      checked={contact.checked}
+                      onChange={(event) => {
+                        const checked = event.target.checked
+                        setContacts((current) =>
+                          current.map((item) =>
+                            item.associateCode === contact.associateCode
+                              ? { ...item, checked }
+                              : item,
+                          ),
+                        )
+                        void api
+                          .saveConference(building, contact.associateCode, checked)
+                          .catch(() => {
+                            setContacts((current) =>
+                              current.map((item) =>
+                                item.associateCode === contact.associateCode
+                                  ? { ...item, checked: !checked }
+                                  : item,
+                              ),
+                            )
+                            setError('Não foi possível salvar a conferência.')
+                          })
+                      }}
+                    />
+                    Conferido
+                  </label>
                 </div>
                 <form
                   onSubmit={(event) => {
@@ -395,6 +610,7 @@ export function CobrancaCalls({ building, group }: Props) {
                   hint={voiceHint}
                   onRecorded={reloadRecordings}
                   audioRouting={audioRouting}
+                  canGoLive={contact.checked}
                   locked={
                     Boolean(activeContract) &&
                     activeContract !== contact.associateCode
@@ -431,6 +647,7 @@ export function CobrancaCalls({ building, group }: Props) {
           })}
         </ul>
       </section>
+      </div>
     </div>
   )
 }

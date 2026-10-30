@@ -22,7 +22,10 @@ import {
   offerDecisionUntil,
 } from '../src/config/anticipation'
 import { EDGE_LANDMARK_IDS } from '../src/config/surroundings'
-import { whatsappPhonesMatch } from '../src/config/collectionNotice'
+import {
+  normalizeBrazilPhone,
+  whatsappPhonesMatch,
+} from '../src/config/collectionNotice'
 import { pool, transaction } from './db'
 import { createSharedCache } from './sharedCache'
 import { runCollectionAgent, startCollectionAgent } from './whatsapp/agent'
@@ -526,7 +529,8 @@ app.post(
       return
     }
     const contact = await pool.query(
-      `SELECT coalesce(nullif(e.whatsapp_phone, ''), ap.phone) AS phone,
+      `SELECT s.building, e.associate_code,
+              coalesce(nullif(e.whatsapp_phone, ''), ap.phone) AS phone,
               coalesce(nullif(e.email, ''), ap.email) AS email
          FROM anticipation_entries e
          JOIN anticipation_sessions s ON s.id = e.session_id
@@ -546,6 +550,29 @@ app.post(
       channel === 'phone'
         ? whatsappPhonesMatch(phone, value)
         : emailsMatch(email, value)
+    if (!matches && channel === 'phone' && request.body?.updatePhone === true) {
+      const nextPhone = normalizeBrazilPhone(value)
+      if (!nextPhone) {
+        response.status(400).json({
+          error: 'Informe um celular válido com DDD.',
+        })
+        return
+      }
+      const building = String(contact.rows[0]?.building ?? '')
+      const associateCode = String(contact.rows[0]?.associate_code ?? '')
+      await pool.query(
+        `INSERT INTO portal_call_requests
+           (building, associate_code, phone, created_at)
+         VALUES ($1, $2, $3, now())
+         ON CONFLICT (building, associate_code) DO UPDATE
+           SET phone = EXCLUDED.phone, created_at = now()`,
+        [building, associateCode, nextPhone],
+      )
+      portalConfirmations.delete(confirmationId)
+      await openAssociatePortal(response, pending.entryId, pending.sessionId)
+      response.json({ ok: true, queued: true })
+      return
+    }
     if (!matches) {
       response.status(401).json({
         error: 'Este dado não confere com o cadastro.',
@@ -1042,6 +1069,46 @@ app.use('/api', (request: AuthRequest, response, next) => {
   response
     .status(403)
     .json({ error: 'A tela da live somente acompanha o operador.' })
+})
+
+app.get('/api/portal/present', async (request, response) => {
+  const buildingValue = String(request.query.building ?? '')
+  const building = BUILDINGS.includes(buildingValue as Building)
+    ? (buildingValue as Building)
+    : null
+  const groupValue = String(request.query.drawGroup ?? '')
+  if (!building || !isDrawGroup(building, groupValue)) {
+    response.status(400).json({ error: 'Empreendimento ou grupo inválido.' })
+    return
+  }
+  const { rows } = await pool.query(
+    `SELECT e.associate_code AS "associateCode",
+            max(e.participant) AS participant,
+            max(p.created_at) AS since
+       FROM associate_portal_sessions p
+       JOIN anticipation_entries e ON e.id = p.entry_id
+       JOIN anticipation_sessions s ON s.id = p.session_id
+      WHERE p.expires_at > now()
+        AND s.status <> 'closed'
+        AND s.building = $1
+        AND s.draw_group = $2
+        AND NOT EXISTS (
+          SELECT 1
+            FROM contemplated_associates c
+           WHERE c.building = s.building
+             AND c.associate_code = e.associate_code
+        )
+      GROUP BY e.associate_code
+      ORDER BY max(p.created_at) DESC`,
+    [building, groupValue],
+  )
+  response.json(
+    rows.map((row) => ({
+      associateCode: String(row.associateCode),
+      participant: String(row.participant ?? ''),
+      since: new Date(String(row.since)).toISOString(),
+    })),
+  )
 })
 
 app.get('/api/users', requireAdmin, async (_request, response) => {

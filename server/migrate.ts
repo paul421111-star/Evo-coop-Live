@@ -458,6 +458,14 @@ CREATE TABLE IF NOT EXISTS associate_phones (
 ALTER TABLE associate_phones
   ADD COLUMN IF NOT EXISTS email varchar(180);
 
+CREATE TABLE IF NOT EXISTS portal_call_requests (
+  building varchar(40) NOT NULL,
+  associate_code varchar(6) NOT NULL CHECK (associate_code ~ '^[0-9]{6}$'),
+  phone varchar(20) NOT NULL,
+  created_at timestamptz NOT NULL DEFAULT now(),
+  PRIMARY KEY (building, associate_code)
+);
+
 ALTER TABLE anticipation_entries
   ADD COLUMN IF NOT EXISTS email varchar(180);
 
@@ -491,6 +499,41 @@ CREATE TABLE IF NOT EXISTS product_issues (
 );
 CREATE INDEX IF NOT EXISTS product_issues_stage_idx
   ON product_issues(stage, created_at DESC);
+
+ALTER TABLE anticipation_entries
+  ADD COLUMN IF NOT EXISTS document_number varchar(11);
+ALTER TABLE anticipation_entries
+  DROP CONSTRAINT IF EXISTS anticipation_entries_document_number_check;
+ALTER TABLE anticipation_entries
+  ADD CONSTRAINT anticipation_entries_document_number_check
+  CHECK (document_number IS NULL OR document_number ~ '^[0-9]{11}$');
+ALTER TABLE anticipation_entries
+  ADD COLUMN IF NOT EXISTS birth_date date;
+
+CREATE TABLE IF NOT EXISTS associate_conferences (
+  building varchar(40) NOT NULL,
+  associate_code varchar(6) NOT NULL CHECK (associate_code ~ '^[0-9]{6}$'),
+  checked boolean NOT NULL DEFAULT false,
+  checked_by text REFERENCES app_users(id) ON DELETE SET NULL,
+  checked_at timestamptz,
+  PRIMARY KEY (building, associate_code)
+);
+
+CREATE TABLE IF NOT EXISTS voice_lines (
+  phone varchar(20) PRIMARY KEY,
+  assigned_user_id text REFERENCES app_users(id) ON DELETE SET NULL,
+  claimed_by text REFERENCES app_users(id) ON DELETE SET NULL,
+  claimed_at timestamptz
+);
+INSERT INTO voice_lines (phone)
+VALUES
+  ('551151963698'),
+  ('551150287378'),
+  ('551150289978'),
+  ('551150286105'),
+  ('551135113634'),
+  ('551150284594')
+ON CONFLICT (phone) DO NOTHING;
 `
 
 async function migrate() {

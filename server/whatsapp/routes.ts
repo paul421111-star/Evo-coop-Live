@@ -5,6 +5,7 @@ import type { Express, NextFunction, Request, Response } from 'express'
 import rateLimit from 'express-rate-limit'
 import twilio from 'twilio'
 import { normalizeBrazilPhone } from '../../src/config/collectionNotice'
+import { pickVoiceLine, type VoiceLineState } from '../../src/config/voiceLines'
 import { pool } from '../db'
 import { readAgentSettings, runCollectionAgent } from './agent'
 import {
@@ -230,9 +231,21 @@ export function registerTwilioVoiceWebhook(app: Express) {
         return
       }
 
+      const requestedLine = String(request.body?.CallerLine ?? '').replace(
+        /\D/g,
+        '',
+      )
+      let callerId = config.phoneNumber
+      if (/^55\d{10}$/.test(requestedLine)) {
+        const line = await pool.query(
+          `SELECT phone FROM voice_lines WHERE phone = $1`,
+          [requestedLine],
+        )
+        if (line.rowCount) callerId = `+${requestedLine}`
+      }
       const dial = voiceResponse.dial({
         answerOnBridge: true,
-        callerId: config.phoneNumber,
+        callerId,
       })
       dial.number(`+${phone}`)
       response.type('text/xml').send(voiceResponse.toString())
@@ -347,19 +360,29 @@ export function registerCobrancaRoutes(app: Express) {
       const { rows } = await pool.query(
         `SELECT DISTINCT ON (e.associate_code)
                 e.id, e.associate_code, e.participant,
+                e.document_tail, e.document_number,
+                to_char(e.birth_date, 'YYYY-MM-DD') AS birth_date,
+                coalesce(ac.checked, false) AS checked,
                 coalesce(ap.phone, e.whatsapp_phone) AS phone
            FROM anticipation_entries e
            JOIN anticipation_sessions s ON s.id = e.session_id
            LEFT JOIN associate_phones ap
              ON ap.building = s.building
             AND ap.associate_code = e.associate_code
+           LEFT JOIN associate_conferences ac
+             ON ac.building = s.building
+            AND ac.associate_code = e.associate_code
           WHERE s.building = $1
             AND ($2 = '' OR s.draw_group = $2)
             AND s.status <> 'closed'
             AND ($3 = ''
                  OR e.associate_code LIKE '%' || $3 || '%'
                  OR e.participant ILIKE '%' || $3 || '%'
-                 OR ($4 <> '' AND coalesce(ap.phone, e.whatsapp_phone, '') LIKE '%' || $4 || '%'))
+                 OR ($4 <> '' AND (
+                      coalesce(ap.phone, e.whatsapp_phone, '') LIKE '%' || $4 || '%'
+                      OR coalesce(e.document_tail, '') LIKE '%' || $4 || '%'
+                      OR coalesce(e.document_number, '') LIKE '%' || $4 || '%'
+                 )))
           ORDER BY e.associate_code, s.created_at DESC
           LIMIT 1000`,
         [building, group, search, search.replace(/\D/g, '')],
@@ -370,8 +393,253 @@ export function registerCobrancaRoutes(app: Express) {
           associateCode: String(row.associate_code),
           participant: String(row.participant ?? ''),
           phone: row.phone ? String(row.phone) : '',
+          documentTail: row.document_tail ? String(row.document_tail) : '',
+          documentNumber: row.document_number ? String(row.document_number) : '',
+          birthDate: row.birth_date ? String(row.birth_date) : '',
+          checked: Boolean(row.checked),
         })),
       )
+    },
+  )
+
+  app.patch(
+    '/api/cobranca/voice/conference',
+    requireCollections,
+    async (request: StaffRequest, response) => {
+      const building = String(request.body?.building ?? '')
+      const associateCode = String(request.body?.associateCode ?? '')
+      const checked = request.body?.checked === true
+      if (!building || !/^\d{6}$/.test(associateCode)) {
+        response.status(400).json({ error: 'Informe o contrato da conferência.' })
+        return
+      }
+      await pool.query(
+        `INSERT INTO associate_conferences
+           (building, associate_code, checked, checked_by, checked_at)
+         VALUES ($1, $2, $3, $4, CASE WHEN $3 THEN now() ELSE NULL END)
+         ON CONFLICT (building, associate_code) DO UPDATE
+           SET checked = EXCLUDED.checked,
+               checked_by = EXCLUDED.checked_by,
+               checked_at = EXCLUDED.checked_at`,
+        [building, associateCode, checked, checked ? request.user?.id ?? null : null],
+      )
+      response.json({ associateCode, checked })
+    },
+  )
+
+  app.get(
+    '/api/cobranca/voice/lines',
+    requireCollections,
+    async (_request, response) => {
+      const [lines, staff] = await Promise.all([
+        pool.query(
+          `SELECT v.phone,
+                  v.assigned_user_id,
+                  assigned.username AS assigned_username,
+                  v.claimed_by,
+                  claimed.username AS claimed_username,
+                  v.claimed_at > now() - interval '90 seconds' AS in_use
+             FROM voice_lines v
+             LEFT JOIN app_users assigned ON assigned.id = v.assigned_user_id
+             LEFT JOIN app_users claimed ON claimed.id = v.claimed_by
+            ORDER BY v.phone`,
+        ),
+        pool.query(
+          `SELECT id, username
+             FROM app_users
+            WHERE role IN ('admin', 'operator_sede')
+            ORDER BY lower(username)`,
+        ),
+      ])
+      response.json({
+        lines: lines.rows.map((row) => ({
+          phone: String(row.phone),
+          assignedUserId: row.assigned_user_id
+            ? String(row.assigned_user_id)
+            : null,
+          assignedUsername: row.assigned_username
+            ? String(row.assigned_username)
+            : '',
+          inUse: Boolean(row.in_use),
+          claimedUsername:
+            row.in_use && row.claimed_username
+              ? String(row.claimed_username)
+              : '',
+        })),
+        staff: staff.rows.map((row) => ({
+          id: String(row.id),
+          username: String(row.username),
+        })),
+      })
+    },
+  )
+
+  app.patch(
+    '/api/cobranca/voice/lines/:phone',
+    requireCollections,
+    async (request, response) => {
+      const phone = String(request.params.phone ?? '').replace(/\D/g, '')
+      const userId = request.body?.userId
+        ? String(request.body.userId)
+        : null
+      if (!/^55\d{10}$/.test(phone)) {
+        response.status(400).json({ error: 'Número de voz inválido.' })
+        return
+      }
+      if (userId) {
+        const staff = await pool.query(
+          `SELECT id FROM app_users
+            WHERE id = $1 AND role IN ('admin', 'operator_sede')`,
+          [userId],
+        )
+        if (!staff.rowCount) {
+          response.status(400).json({ error: 'Escolha um usuário da sede.' })
+          return
+        }
+      }
+      const updated = await pool.query(
+        `UPDATE voice_lines
+            SET assigned_user_id = $2
+          WHERE phone = $1`,
+        [phone, userId],
+      )
+      if (!updated.rowCount) {
+        response.status(404).json({ error: 'Número de voz não encontrado.' })
+        return
+      }
+      response.json({ phone, assignedUserId: userId })
+    },
+  )
+
+  app.post(
+    '/api/cobranca/voice/lines/claim',
+    requireCollections,
+    async (request: StaffRequest, response) => {
+      const userId = request.user?.id ?? ''
+      const requested = String(request.body?.phone ?? '').replace(/\D/g, '')
+      if (!userId) {
+        response.status(401).json({ error: 'Sessão necessária.' })
+        return
+      }
+      const client = await pool.connect()
+      try {
+        await client.query('BEGIN')
+        const { rows } = await client.query(
+          `SELECT phone, assigned_user_id, claimed_by,
+                  extract(epoch FROM claimed_at) * 1000 AS claimed_at
+             FROM voice_lines
+            FOR UPDATE`,
+        )
+        const lines: VoiceLineState[] = rows.map((row) => ({
+          phone: String(row.phone),
+          assignedUserId: row.assigned_user_id
+            ? String(row.assigned_user_id)
+            : null,
+          claimedBy: row.claimed_by ? String(row.claimed_by) : null,
+          claimedAt: row.claimed_at == null ? null : Number(row.claimed_at),
+        }))
+        const current = requested
+          ? lines.find((line) => line.phone === requested)
+          : undefined
+        const keep =
+          current &&
+          current.claimedBy === userId &&
+          (!current.assignedUserId || current.assignedUserId === userId)
+            ? current.phone
+            : null
+        const chosen =
+          keep ??
+          (requested ? null : pickVoiceLine(lines, userId, Date.now()))
+        if (!chosen) {
+          await client.query('ROLLBACK')
+          response.status(409).json({
+            error: 'Não há número de voz livre para esta ligação.',
+          })
+          return
+        }
+        await client.query(
+          `UPDATE voice_lines
+              SET claimed_by = $2, claimed_at = now()
+            WHERE phone = $1`,
+          [chosen, userId],
+        )
+        await client.query('COMMIT')
+        response.json({ phone: chosen })
+      } catch (error) {
+        await client.query('ROLLBACK')
+        throw error
+      } finally {
+        client.release()
+      }
+    },
+  )
+
+  app.post(
+    '/api/cobranca/voice/lines/release',
+    requireCollections,
+    async (request: StaffRequest, response) => {
+      const phone = String(request.body?.phone ?? '').replace(/\D/g, '')
+      await pool.query(
+        `UPDATE voice_lines
+            SET claimed_by = NULL, claimed_at = NULL
+          WHERE phone = $1 AND claimed_by = $2`,
+        [phone, request.user?.id ?? ''],
+      )
+      response.status(204).end()
+    },
+  )
+
+  app.get(
+    '/api/cobranca/voice/call-requests',
+    requireCollections,
+    async (request, response) => {
+      const building = String(request.query.building ?? '')
+      const group = String(request.query.group ?? '')
+      if (!building) {
+        response.status(400).json({ error: 'Informe o condomínio do evento.' })
+        return
+      }
+      const { rows } = await pool.query(
+        `SELECT DISTINCT ON (r.associate_code)
+                r.associate_code, r.phone, e.participant
+           FROM portal_call_requests r
+           JOIN anticipation_sessions s
+             ON s.building = r.building
+            AND s.status <> 'closed'
+           JOIN anticipation_entries e
+             ON e.session_id = s.id
+            AND e.associate_code = r.associate_code
+          WHERE r.building = $1
+            AND ($2 = '' OR s.draw_group = $2)
+          ORDER BY r.associate_code, r.created_at DESC`,
+        [building, group],
+      )
+      response.json(
+        rows.map((row) => ({
+          associateCode: String(row.associate_code),
+          participant: String(row.participant ?? ''),
+          phone: String(row.phone),
+        })),
+      )
+    },
+  )
+
+  app.delete(
+    '/api/cobranca/voice/call-requests/:code',
+    requireCollections,
+    async (request, response) => {
+      const building = String(request.query.building ?? '')
+      const associateCode = String(request.params.code ?? '')
+      if (!building || !/^\d{6}$/.test(associateCode)) {
+        response.status(400).json({ error: 'Informe o contrato de 6 dígitos.' })
+        return
+      }
+      await pool.query(
+        `DELETE FROM portal_call_requests
+          WHERE building = $1 AND associate_code = $2`,
+        [building, associateCode],
+      )
+      response.status(204).end()
     },
   )
 

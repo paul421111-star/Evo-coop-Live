@@ -138,6 +138,8 @@ export function AssociatePortal() {
       mask: string
     }>
     selected: 'phone' | 'email' | null
+    /** No celular: confirmar o cadastro ou mandar um número novo para a ligação. */
+    phoneMode: 'registered' | 'new'
     draft: string
   } | null>(null)
   const [error, setError] = useState('')
@@ -342,6 +344,7 @@ export function AssociatePortal() {
         confirmationId: pending.confirmationId,
         channels: pending.channels,
         selected: null,
+        phoneMode: 'registered',
         draft: '',
       })
     } catch (accessError) {
@@ -361,12 +364,19 @@ export function AssociatePortal() {
     if (!contactCheck?.selected) return
     setBusy(true)
     setError('')
+    setNotice('')
     try {
-      await api.portalConfirm(
+      const result = await api.portalConfirm(
         contactCheck.confirmationId,
         contactCheck.selected,
         contactCheck.draft,
+        contactCheck.selected === 'phone' && contactCheck.phoneMode === 'new',
       )
+      if (result.queued) {
+        setNotice(
+          'Número enviado para a lista de ligação. A equipe vai ligar neste celular.',
+        )
+      }
       setContactCheck(null)
       await loadView()
     } catch (confirmError) {
@@ -482,10 +492,10 @@ export function AssociatePortal() {
             alt="Cooperativa Habitacional Vida Nova — 30 anos"
           />
           <span className="eyebrow">Portal do associado</span>
-          <h1>Antecipe e acompanhe o ranking</h1>
+          <h1>Acompanhe o evento de sorteio</h1>
           <p>
             Informe o contrato e os 5 últimos dígitos do CPF. Depois você
-            confirma o celular ou o e-mail do cadastro.
+            confirma o celular do cadastro ou informa um número novo.
           </p>
           {contactCheck ? (
             <form onSubmit={(event) => void submitContact(event)}>
@@ -524,9 +534,49 @@ export function AssociatePortal() {
                 <>
                   <p className="portal-contact-lead">
                     {contactCheck.selected === 'phone'
-                      ? 'Digite o celular completo. Só os dois últimos números aparecem.'
+                      ? contactCheck.phoneMode === 'new'
+                        ? 'Informe o novo celular. Você entra no sorteio e a equipe recebe este número na lista de ligação.'
+                        : 'Digite o celular completo do cadastro. Só os dois últimos números aparecem.'
                       : 'Digite o e-mail completo. Só um pedaço aparece.'}
                   </p>
+                  {contactCheck.selected === 'phone' && (
+                    <div className="portal-contact-choices">
+                      <button
+                        type="button"
+                        className={`portal-contact-choice${
+                          contactCheck.phoneMode === 'registered' ? ' is-active' : ''
+                        }`}
+                        onClick={() => {
+                          setError('')
+                          setContactCheck({
+                            ...contactCheck,
+                            phoneMode: 'registered',
+                            draft: '',
+                          })
+                        }}
+                      >
+                        <strong>Número do cadastro</strong>
+                        <small>Confirmar e entrar</small>
+                      </button>
+                      <button
+                        type="button"
+                        className={`portal-contact-choice${
+                          contactCheck.phoneMode === 'new' ? ' is-active' : ''
+                        }`}
+                        onClick={() => {
+                          setError('')
+                          setContactCheck({
+                            ...contactCheck,
+                            phoneMode: 'new',
+                            draft: '',
+                          })
+                        }}
+                      >
+                        <strong>Novo número</strong>
+                        <small>Entra no sorteio e na lista de ligação</small>
+                      </button>
+                    </div>
+                  )}
                   <p className="portal-contact-mask">
                     {contactCheck.channels.find(
                       (item) => item.channel === contactCheck.selected,
@@ -538,7 +588,9 @@ export function AssociatePortal() {
                     <label className="login-field">
                       <span>
                         {contactCheck.selected === 'phone'
-                          ? 'Número completo'
+                          ? contactCheck.phoneMode === 'new'
+                            ? 'Novo celular'
+                            : 'Número completo'
                           : 'E-mail completo'}
                       </span>
                       <div>
@@ -595,10 +647,18 @@ export function AssociatePortal() {
                       !contactCheck.channels.find(
                         (item) => item.channel === contactCheck.selected,
                       )?.available ||
-                      contactCheck.draft.trim().length < 4
+                      (contactCheck.selected === 'phone' &&
+                      contactCheck.phoneMode === 'new'
+                        ? contactCheck.draft.replace(/\D/g, '').length < 10
+                        : contactCheck.draft.trim().length < 4)
                     }
                   >
-                    {busy ? 'Conferindo…' : 'Confirmar e entrar'}
+                    {busy
+                      ? 'Conferindo…'
+                      : contactCheck.selected === 'phone' &&
+                          contactCheck.phoneMode === 'new'
+                        ? 'Entrar com este número'
+                        : 'Confirmar e entrar'}
                   </button>
                   <button
                     type="button"
@@ -615,6 +675,11 @@ export function AssociatePortal() {
                     Escolher outro contato
                   </button>
                 </>
+              )}
+              {notice && (
+                <p className="portal-notice">
+                  <Check size={15} /> {notice}
+                </p>
               )}
               {error && <p className="login-error">{error}</p>}
             </form>
@@ -686,7 +751,7 @@ export function AssociatePortal() {
             )}
             {error && <p className="login-error">{error}</p>}
             <button className="login-submit" type="submit" disabled={busy}>
-              {busy ? 'Verificando…' : 'Entrar no ranking'}
+              {busy ? 'Verificando…' : 'Entrar no sorteio'}
             </button>
           </form>
           )}

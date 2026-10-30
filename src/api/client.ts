@@ -148,6 +148,35 @@ export type CallContact = {
   associateCode: string
   participant: string
   phone: string
+  documentTail: string
+  documentNumber: string
+  birthDate: string
+  checked: boolean
+}
+
+export type VoiceLine = {
+  phone: string
+  assignedUserId: string | null
+  assignedUsername: string
+  inUse: boolean
+  claimedUsername: string
+}
+
+export type VoiceStaff = {
+  id: string
+  username: string
+}
+
+export type PortalCallRequest = {
+  associateCode: string
+  participant: string
+  phone: string
+}
+
+export type LoggedAssociate = {
+  associateCode: string
+  participant: string
+  since: string
 }
 
 export type CallRecording = {
@@ -186,6 +215,10 @@ export const api = {
       body: JSON.stringify({ username, password }),
     }),
   currentUser: () => request<AppUser>('/api/auth/me'),
+  loggedAssociates: (building: BuildingKind, drawGroup: string) =>
+    request<LoggedAssociate[]>(
+      `/api/portal/present?${new URLSearchParams({ building, drawGroup })}`,
+    ),
   logout: () => request<void>('/api/auth/logout', { method: 'POST' }),
   users: () => request<AppUser[]>('/api/users'),
   createUser: (username: string, password: string) =>
@@ -521,6 +554,40 @@ export const api = {
       identity: string
       iceServers: RTCIceServer[]
     }>('/api/cobranca/voice/token', { method: 'POST' }),
+  cobrancaVoiceLines: () =>
+    request<{ lines: VoiceLine[]; staff: VoiceStaff[] }>(
+      '/api/cobranca/voice/lines',
+    ),
+  assignVoiceLine: (phone: string, userId: string | null) =>
+    request<{ phone: string; assignedUserId: string | null }>(
+      `/api/cobranca/voice/lines/${encodeURIComponent(phone)}`,
+      {
+        method: 'PATCH',
+        body: JSON.stringify({ userId }),
+      },
+    ),
+  claimVoiceLine: (phone?: string) =>
+    request<{ phone: string }>('/api/cobranca/voice/lines/claim', {
+      method: 'POST',
+      body: JSON.stringify(phone ? { phone } : {}),
+    }),
+  releaseVoiceLine: (phone: string) =>
+    request<void>('/api/cobranca/voice/lines/release', {
+      method: 'POST',
+      body: JSON.stringify({ phone }),
+    }),
+  saveConference: (
+    building: BuildingKind,
+    associateCode: string,
+    checked: boolean,
+  ) =>
+    request<{ associateCode: string; checked: boolean }>(
+      '/api/cobranca/voice/conference',
+      {
+        method: 'PATCH',
+        body: JSON.stringify({ building, associateCode, checked }),
+      },
+    ),
   cobrancaCallPhones: () =>
     request<CallPhone[]>('/api/cobranca/voice/phones'),
   addCobrancaCallPhone: (name: string, phone: string) =>
@@ -532,6 +599,15 @@ export const api = {
     request<void>(`/api/cobranca/voice/phones/${encodeURIComponent(id)}`, {
       method: 'DELETE',
     }),
+  cobrancaCallRequests: (building: BuildingKind, group: string) =>
+    request<PortalCallRequest[]>(
+      `/api/cobranca/voice/call-requests?${new URLSearchParams({ building, group })}`,
+    ),
+  dismissCobrancaCallRequest: (building: BuildingKind, associateCode: string) =>
+    request<void>(
+      `/api/cobranca/voice/call-requests/${encodeURIComponent(associateCode)}?${new URLSearchParams({ building })}`,
+      { method: 'DELETE' },
+    ),
   cobrancaCallContacts: (building: BuildingKind, group: string, q: string) =>
     request<CallContact[]>(
       `/api/cobranca/voice/contacts?${new URLSearchParams({ building, group, q })}`,
@@ -605,10 +681,11 @@ export const api = {
     confirmationId: string,
     channel: 'phone' | 'email',
     value: string,
+    updatePhone = false,
   ) =>
-    request<{ ok: true }>('/api/public/portal/confirm', {
+    request<{ ok: true; queued?: boolean }>('/api/public/portal/confirm', {
       method: 'POST',
-      body: JSON.stringify({ confirmationId, channel, value }),
+      body: JSON.stringify({ confirmationId, channel, value, updatePhone }),
     }),
   portalView: () => request<AssociatePortalView>('/api/public/portal'),
   portalDrawBoard: () =>
