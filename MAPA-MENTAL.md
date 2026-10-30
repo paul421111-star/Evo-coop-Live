@@ -1,6 +1,6 @@
 # Mapa mental — Evo Coop Live
 
-Atualizado em 29/10/2026. Branch `feat/grupo-12-fachada-real`. O último commit enviado ao `origin` segue `30e5c41`; a regra de inadimplente ainda está só neste computador.
+Atualizado em 30/10/2026. Branch `feat/grupo-12-fachada-real`. O último commit enviado ao `origin` segue `30e5c41`; a regra de inadimplente ainda está só neste computador.
 
 Leia este arquivo antes de abrir o código. Ele diz o que o sistema faz, onde cada coisa mora e o que não pode ser mexido. Quando uma mudança alterar comportamento, arquitetura ou regra, atualize a seção correspondente e a data do topo. Não copie código para cá e não grave senha, token, CPF, telefone nem conteúdo do `.env`.
 
@@ -46,17 +46,17 @@ O contrato tem 6 dígitos: os 2 primeiros são o grupo, os 4 últimos são a bol
 
 Rotas em `src/App.tsx`: `/sorteio` (mapa), `/ranking`, `/cobranca`.
 
-No sorteio, da esquerda para a direita: prédio 3D e planta (`BuildingScene`, `FloorPlanScene`), plaquinha da vez (`TurnSign`) e o mapa de unidades (`ApartmentGrid`). Com a planta aberta, a plaquinha fica no alto dela, só na largura do número, ao lado do título "Planta ampliada". A caixa do apartamento selecionado fica à direita da torre, fora da fachada. Na planta, o sol nascente fica abaixo desse título, sem cobrir os apartamentos, e o sol poente no canto inferior esquerdo. Filtros de andar, final e situação. O botão **Mais alto livre** acompanha o apartamento livre do andar mais alto (`highestFreeApartment` em `src/config/building.ts`); escolher outro apartamento desliga o acompanhamento. A faixa do topo e a placa sobre a planta mostram o número da vez em destaque.
+No sorteio, a barra escolhe os dois, só o prédio ou só a planta (`BuildingScene`, `FloorPlanScene`). A transmissão acompanha. A plaquinha da vez (`TurnSign`) e o mapa de unidades (`ApartmentGrid`) ficam na mesma tela. Com a planta aberta, a plaquinha fica no alto dela, só na largura do número, ao lado do título "Planta ampliada". A caixa do apartamento selecionado fica à direita da torre, fora da fachada. Na planta, o sol nascente fica abaixo desse título, sem cobrir os apartamentos, e o sol poente no canto inferior esquerdo. A etiqueta "Nascer do sol" também fica abaixo do título, para não sumir atrás dele. No tema claro, o fundo da planta e os cartões ficam claros, no mesmo tom do prédio. A planta ocupa a área inteira: os cartões flutuam por cima, sem a faixa da direita, e a borda deles é um gradiente dourado. A plaquinha do bloco fica no rodapé mesmo com o sol poente no canto esquerdo. No tema escuro, a placa da vez usa o azul da cooperativa, e os quatro últimos dígitos do contrato ficam com brilho fixo. Reservado fica amarelo e o apartamento selecionado fica azul, na planta, na torre e no mapa de unidades. O administrador pode editar o contrato de uma reserva já confirmada. Filtros de andar, final e situação. O botão **Mais alto livre** acompanha o apartamento livre do andar mais alto (`highestFreeApartment` em `src/config/building.ts`); escolher outro apartamento desliga o acompanhamento. A faixa do topo e a placa sobre a planta mostram o número da vez em destaque.
 
-A transmissão (`role === 'live'`) usa esta mesma tela. `requestApartment` não faz nada, os controles de escrita somem e o servidor recusa o restante das rotas. O que ela pode ler: `GET /map`, `GET /auth/me`, `POST /auth/logout`, `GET /live/board`, `GET /anticipation-sessions/current`. Nomes de participantes saem em branco. `LiveScreen.tsx` existe, mas o `App` não usa mais.
+A transmissão (`role === 'live'`) usa esta mesma tela. `requestApartment` não faz nada, os controles de escrita somem e o servidor recusa o restante das rotas. A lista de abdicação abre já visível, sem o formulário de inclusão e sem o nome. O que ela pode ler: `GET /map`, `GET /auth/me`, `POST /auth/logout`, `GET /live/board`, `GET /anticipation-sessions/current`. Nomes de participantes saem em branco. `LiveScreen.tsx` existe, mas o `App` não usa mais.
 
-O operador publica o foco a cada mudança, com 300 ms de espera, em `PUT /api/live/board`: prédio, grupo, contrato, apartamento, vista, tema e disponibilidade.
+O operador publica o foco a cada mudança, com 300 ms de espera, em `PUT /api/live/board`: prédio, grupo, apartamento, vista, tema e disponibilidade. O número do sorteado só entra nessa publicação no botão Enviar, ao lado do campo.
 
 ## Sorteio e antecipação
 
 Estados da sessão: `draft` (associado ainda muda a quantidade), `locked` (só confirma ou recusa), `active` (escolha ao vivo), `closed`.
 
-Na sessão ativa a vez alterna entre antecipador e sorteio (`nextSource`). A plaquinha só troca no botão **Próximo**. Abdições entram na conta das chamadas de antecipador. Antecipação desta rodada: de 10 até o que falta para 30, somando eventos anteriores. Quem recusa fica com o saldo anterior.
+Na sessão ativa a vez alterna entre antecipador e sorteio (`nextSource`). A plaquinha só troca no botão **Próximo** e mostra a chamada atual, como 1º antecipador e 1º sorteado. Abaixo de Próximo, Abdicação abre Não atendeu e Abdicou; a escolha já registra a abdicação da chamada atual. Abdições entram na conta das chamadas de antecipador. Abdicação fora da vez, feita pelo admin no ranking (`abdicated`), tira o associado da fila sem gastar chamada: sai da numeração e o próximo de fora das vagas sobe. Antecipação desta rodada: de 10 até o que falta para 30, somando eventos anteriores. Quem recusa fica com o saldo anterior.
 
 Limpar o mapa de teste (`POST /api/map/clear`) também zera o ranking da sessão aberta, na mesma transação. Não rode isso sem pedido explícito. Não mude `status` nem `next_source` da sessão ao vivo, e não feche a sessão, sem pedido explícito.
 

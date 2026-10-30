@@ -127,19 +127,19 @@ export function ApartmentGrid({
               const assignment =
                 assignments[apartmentStorageId(config.kind, id)]
               const hidden = statusFilter !== 'all' && status !== statusFilter
-              const statusData =
-                selectedId === id && status === 'none'
-                  ? {
-                      ...STATUS_BY_ID.none,
-                      label: 'Selecionado',
-                      color: SELECTED_UNIT_COLOR,
-                    }
-                  : STATUS_BY_ID[status]
+              const selected = selectedId === id
+              const statusData = selected
+                ? {
+                    ...STATUS_BY_ID[status],
+                    label: status === 'none' ? 'Selecionado' : STATUS_BY_ID[status].label,
+                    color: SELECTED_UNIT_COLOR,
+                  }
+                : STATUS_BY_ID[status]
               return (
                 <button
                   key={id}
                   type="button"
-                  className={`unit-cell ${selectedId === id ? 'is-selected' : ''} ${
+                  className={`unit-cell ${selected ? 'is-selected' : ''} ${
                     status === 'reserved' ? 'is-reserved' : ''
                   } ${hidden ? 'is-filtered' : ''}${readOnly ? ' is-readonly' : ''}`}
                   style={{ '--unit-color': statusData.color } as StatusStyle}

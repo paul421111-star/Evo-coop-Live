@@ -24,6 +24,7 @@ type Props = {
   highlightAvailability?: boolean
   sceneTheme?: 'dark' | 'light'
   locked?: boolean
+  framed?: boolean
   onSelect: (id: string) => void
   onActivate: (id: string) => void
 }
@@ -89,17 +90,15 @@ function FloorUnits({
         const selected = selectedId === id
         const hovered = hoveredId === id
         const reserved = status === 'reserved'
-        const color = reserved
-          ? selected
-            ? SELECTED_UNIT_COLOR
-            : '#e8eef4'
-          : status === 'none'
-            ? selected
-              ? SELECTED_UNIT_COLOR
-              : highlightAvailability
+        const color = selected
+          ? SELECTED_UNIT_COLOR
+          : reserved
+            ? STATUS_BY_ID.reserved.color
+            : status === 'none'
+              ? highlightAvailability
                 ? STATUS_BY_ID.available.color
                 : '#38bdf8'
-            : STATUS_BY_ID[status].color
+              : STATUS_BY_ID[status].color
         const balcony = balconyKeyOffset(position)
 
         return (
@@ -131,14 +130,12 @@ function FloorUnits({
                 color={color}
                 transparent
                 opacity={
-                  reserved
-                    ? selected
+                  selected
+                    ? 0.5
+                    : reserved
                       ? 0.46
-                      : 0
-                    : status !== 'none'
-                      ? 0.48
-                      : selected
-                        ? 0.46
+                      : status !== 'none'
+                        ? 0.48
                         : highlightAvailability
                           ? hovered
                             ? 0.34
@@ -205,6 +202,8 @@ export function FloorPlanScene(props: Props) {
   const modelUrl = props.modelUrl ?? props.config.floorModel
   if (!modelUrl) return null
   const mapRotationY = props.config.mapRotationY ?? 0
+  const biasX = props.framed ? -1.6 : 0
+  const biasZ = props.framed ? 2.3 : 0
 
   return (
     <Canvas
@@ -212,7 +211,7 @@ export function FloorPlanScene(props: Props) {
       camera={{
         position: [0, 60, 0],
         rotation: [-Math.PI / 2, 0, 0],
-        zoom: 11.5,
+        zoom: props.framed ? 10.15 : 11.5,
         near: 0.1,
         far: 150,
       }}
@@ -227,7 +226,7 @@ export function FloorPlanScene(props: Props) {
       <ambientLight intensity={1.1} />
       <hemisphereLight args={['#ffffff', '#26394a', 1.4]} />
       <directionalLight position={[20, 40, 18]} intensity={1.8} />
-      <group rotation={[0, mapRotationY, 0]}>
+      <group position={[biasX, 0, biasZ]} rotation={[0, mapRotationY, 0]}>
         <Suspense fallback={null}>
           <FloorModel url={modelUrl} grupo12={props.config.kind === 'even'} />
         </Suspense>

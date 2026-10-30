@@ -36,6 +36,12 @@ CREATE TABLE IF NOT EXISTS live_board (
   PRIMARY KEY (building, draw_group)
 );
 
+ALTER TABLE live_board
+  ADD COLUMN IF NOT EXISTS canvas_layout varchar(8) NOT NULL DEFAULT 'both';
+ALTER TABLE live_board DROP CONSTRAINT IF EXISTS live_board_canvas_layout_check;
+ALTER TABLE live_board ADD CONSTRAINT live_board_canvas_layout_check
+  CHECK (canvas_layout IN ('both', 'tower', 'plan'));
+
 CREATE TABLE IF NOT EXISTS app_sessions (
   token_hash text PRIMARY KEY,
   user_id text NOT NULL REFERENCES app_users(id) ON DELETE CASCADE,
@@ -293,6 +299,12 @@ ALTER TABLE anticipation_entries
   ADD COLUMN IF NOT EXISTS offer_status varchar(20) NOT NULL DEFAULT 'pending';
 ALTER TABLE anticipation_entries
   ADD COLUMN IF NOT EXISTS offer_selected_at timestamptz;
+-- Abdicou fora da vez: sai da fila sem gastar uma das chamadas de antecipador.
+ALTER TABLE anticipation_entries
+  DROP CONSTRAINT IF EXISTS anticipation_entries_status_check;
+ALTER TABLE anticipation_entries
+  ADD CONSTRAINT anticipation_entries_status_check
+  CHECK (status IN ('waiting', 'selected', 'declined', 'abdicated'));
 
 CREATE TABLE IF NOT EXISTS associate_portal_sessions (
   token_hash text PRIMARY KEY,

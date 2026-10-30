@@ -247,37 +247,34 @@ function ApartmentVolumes({
         const isHovered = hoveredId === apartment.id
         const isFilled = status !== 'none'
         const plaster = config.kind === 'even'
-        const color = isFilled
-          ? STATUS_BY_ID[status].color
-          : isSelected
-            ? SELECTED_UNIT_COLOR
+        const color = isSelected
+          ? SELECTED_UNIT_COLOR
+          : isFilled
+            ? STATUS_BY_ID[status].color
             : highlightAvailability
               ? plaster
                 ? '#8FCB9F'
                 : STATUS_BY_ID.available.color
               : '#38bdf8'
-        const opacity =
-          status === 'reserved'
-            ? plaster
-              ? 0.08
-              : 0.16
+        const opacity = isSelected
+          ? 0.5
+          : status === 'reserved'
+            ? 0.42
             : isFilled
               ? highlightAvailability
                 ? 0.5
                 : 0.38
-              : isSelected
-                ? 0.42
-                : highlightAvailability
-                  ? isHovered
-                    ? plaster
-                      ? 0.4
-                      : 0.3
-                    : plaster
-                      ? 0.28
-                      : 0.17
-                  : isHovered
-                    ? 0.12
-                    : 0.001
+              : highlightAvailability
+                ? isHovered
+                  ? plaster
+                    ? 0.4
+                    : 0.3
+                  : plaster
+                    ? 0.28
+                    : 0.17
+                : isHovered
+                  ? 0.12
+                  : 0.001
 
         // A caixa cresce só para fora da torre: a face interna continua no
         // lugar e a externa passa a aflorar pouco além da fachada.

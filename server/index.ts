@@ -2230,6 +2230,109 @@ app.delete(
   },
 )
 
+/**
+ * Admin registra a abdicação de quem não está na vez. Não gasta chamada:
+ * o associado sai da fila e o próximo fora das vagas sobe.
+ */
+app.post(
+  '/api/anticipation-sessions/:sessionId/entries/:entryId/abdicate',
+  requireAdmin,
+  async (req: AuthRequest, res) => {
+    const actor = req.user
+    if (!actor) return
+    const reason = String(req.body?.reason ?? '').trim().slice(0, 240)
+    if (!reason) {
+      res.status(400).json({ error: 'Informe a justificativa da abdicação.' })
+      return
+    }
+    const session = await transaction(async (client) => {
+      const sessionResult = await client.query(
+        `SELECT s.*, u.username AS created_by_name
+           FROM anticipation_sessions s
+           LEFT JOIN app_users u ON u.id = s.created_by
+          WHERE s.id = $1
+          FOR UPDATE OF s`,
+        [req.params.sessionId],
+      )
+      const row = sessionResult.rows[0]
+      if (!row) throw new ApiError(404, 'Sessão não encontrada.')
+      if (row.status !== 'active') {
+        throw new ApiError(
+          409,
+          'A abdicação fora da vez só é registrada com o sorteio em andamento.',
+        )
+      }
+      if (row.awaiting_next) {
+        throw new ApiError(
+          409,
+          'Desfaça a reserva ou passe para o próximo antes de registrar a abdicação.',
+        )
+      }
+      const entryResult = await client.query(
+        `SELECT * FROM anticipation_entries
+          WHERE id = $1 AND session_id = $2
+          FOR UPDATE`,
+        [req.params.entryId, req.params.sessionId],
+      )
+      const entry = entryResult.rows[0]
+      if (!entry) throw new ApiError(404, 'Associado não encontrado no ranking.')
+      if (entry.status !== 'waiting') {
+        throw new ApiError(409, 'Este associado já foi chamado ou já abdicou.')
+      }
+      if (row.next_source === 'anticipator') {
+        const current = await client.query(
+          `SELECT id FROM anticipation_entries
+            WHERE session_id = $1 AND status = 'waiting'
+            ORDER BY
+              (paid_installments + anticipated_installments + offered_installments) DESC,
+              associate_code::integer ASC
+            LIMIT 1`,
+          [req.params.sessionId],
+        )
+        if (current.rows[0]?.id === entry.id) {
+          throw new ApiError(
+            409,
+            'Este associado está na vez. Use Abdicação na plaquinha.',
+          )
+        }
+      }
+      const alreadyDeclined = await client.query(
+        `SELECT id FROM draw_declines
+          WHERE building = $1 AND lower(ball) = lower($2)`,
+        [row.building, entry.associate_code],
+      )
+      if (alreadyDeclined.rows[0]) {
+        throw new ApiError(
+          409,
+          'Esta bolinha já está na Lista de Abdicação.',
+        )
+      }
+      await client.query(
+        `UPDATE anticipation_entries SET status = 'abdicated' WHERE id = $1`,
+        [entry.id],
+      )
+      await client.query(
+        `INSERT INTO draw_declines
+          (id, building, ball, participant, source, reason, notes, created_by)
+         VALUES ($1, $2, $3, $4, 'anticipator', 'refused', $5, $6)`,
+        [
+          randomUUID(),
+          row.building,
+          entry.associate_code,
+          entry.participant,
+          reason,
+          actor.id,
+        ],
+      )
+      return anticipationSessionData(client, row)
+    })
+    portalSessionCache.delete(String(req.params.sessionId))
+    portalBoardCache.delete(String(req.params.sessionId))
+    associateAuthCache.clear()
+    res.json(session)
+  },
+)
+
 function blankParticipant(value: unknown) {
   if (!value || typeof value !== 'object') return value ?? undefined
   return { ...(value as Record<string, unknown>), participant: '' }
@@ -2358,6 +2461,7 @@ app.get('/api/live/board', async (_request, response) => {
             focus_apartment AS "focusApartment",
             view, scene_theme AS "sceneTheme",
             highlight_availability AS "highlightAvailability",
+            canvas_layout AS "canvasLayout",
             updated_at AS "updatedAt"
        FROM live_board
       ORDER BY updated_at DESC
@@ -2370,10 +2474,15 @@ app.put('/api/live/board', async (request: AuthRequest, response) => {
   const building = String(request.body?.building ?? '') as Building
   const drawGroup = String(request.body?.drawGroup ?? '')
   const associateCode = String(request.body?.associateCode ?? '').trim()
+  const publishAssociate = request.body?.publishAssociate === true
   const focusApartment = String(request.body?.focusApartment ?? '').trim()
   const view = String(request.body?.view ?? 'perspective')
   const sceneTheme = request.body?.sceneTheme === 'light' ? 'light' : 'dark'
   const highlightAvailability = request.body?.highlightAvailability !== false
+  const canvasLayout =
+    request.body?.canvasLayout === 'tower' || request.body?.canvasLayout === 'plan'
+      ? request.body.canvasLayout
+      : 'both'
   if (!BUILDINGS.includes(building) || !isDrawGroup(building, drawGroup)) {
     response.status(400).json({ error: 'Evento inválido.' })
     return
@@ -2393,20 +2502,25 @@ app.put('/api/live/board', async (request: AuthRequest, response) => {
   const { rows } = await pool.query(
     `INSERT INTO live_board (
        building, draw_group, associate_code, focus_apartment, view,
-       scene_theme, highlight_availability, updated_at
-     ) VALUES ($1, $2, $3, $4, $5, $6, $7, now())
+       scene_theme, highlight_availability, canvas_layout, updated_at
+     ) VALUES ($1, $2, $3, $4, $5, $6, $7, $9, now())
      ON CONFLICT (building, draw_group) DO UPDATE SET
-       associate_code = EXCLUDED.associate_code,
+       associate_code = CASE
+         WHEN $8::boolean THEN EXCLUDED.associate_code
+         ELSE live_board.associate_code
+       END,
        focus_apartment = EXCLUDED.focus_apartment,
        view = EXCLUDED.view,
        scene_theme = EXCLUDED.scene_theme,
        highlight_availability = EXCLUDED.highlight_availability,
+       canvas_layout = EXCLUDED.canvas_layout,
        updated_at = now()
      RETURNING building, draw_group AS "drawGroup",
                associate_code AS "associateCode",
                focus_apartment AS "focusApartment",
                view, scene_theme AS "sceneTheme",
                highlight_availability AS "highlightAvailability",
+               canvas_layout AS "canvasLayout",
                updated_at AS "updatedAt"`,
     [
       building,
@@ -2416,6 +2530,8 @@ app.put('/api/live/board', async (request: AuthRequest, response) => {
       view,
       sceneTheme,
       highlightAvailability,
+      publishAssociate,
+      canvasLayout,
     ],
   )
   response.json(rows[0])
@@ -2861,7 +2977,7 @@ app.post(
         `UPDATE anticipation_entries
             SET status = 'waiting',
                 apartment_id = NULL
-          WHERE status IN ('selected', 'declined')
+          WHERE status IN ('selected', 'declined', 'abdicated')
             AND session_id IN (
               SELECT id FROM anticipation_sessions
                WHERE building = $1

@@ -604,6 +604,39 @@ select:focus-visible {
   font: 800 1.85rem/1 'Manrope', sans-serif;
 }
 
+.drawn-ball-send {
+  height: 32px;
+  padding: 0 12px;
+  border: 0;
+  border-radius: 999px;
+  background: #075985;
+  color: #fff;
+  font: 800 0.72rem/1 'Manrope', sans-serif;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+  white-space: nowrap;
+  cursor: pointer;
+  pointer-events: auto;
+}
+
+.drawn-ball-send:disabled {
+  opacity: 0.55;
+  cursor: default;
+}
+
+.canvas-turn-sign .drawn-ball-field {
+  flex-wrap: wrap;
+  max-width: 148px;
+}
+
+.canvas-turn-sign .drawn-ball-send {
+  flex: 1 0 100%;
+  height: 26px;
+  background: #fff;
+  color: #075985;
+  font-size: 9px;
+}
+
 .turn-sign-number {
   font: 800 1.85rem/1 'Manrope', sans-serif;
   letter-spacing: 0.03em;
@@ -632,10 +665,13 @@ select:focus-visible {
   font-size: 1.7rem;
 }
 
-.canvas-turn-sign .drawn-ball-code,
 .canvas-turn-sign .drawn-ball-field b,
 .canvas-turn-sign .turn-sign-number {
   font-size: 1.7rem;
+}
+
+.canvas-turn-sign .drawn-ball-code {
+  display: none;
 }
 
 .active-turn-rule {
@@ -909,6 +945,119 @@ select:focus-visible {
   color: #0f3d4c;
 }
 
+.viewer-card.is-scene-light .floor-plan-view,
+.viewer-card.is-scene-light .split-canvas .tower-view {
+  border-color: #d5dee8;
+  background: #e7eef4;
+}
+
+.viewer-card.is-scene-light .floor-plan-tabs,
+.viewer-card.is-scene-light .site-compass,
+.viewer-card.is-scene-light .orientation-badge,
+.viewer-card.is-scene-light .scene-counter,
+.viewer-card.is-scene-light .availability-legend,
+.viewer-card.is-scene-light .floor-unit-label,
+.viewer-card.is-scene-light .floor-unit-label.is-reserved {
+  border-color: #d5dee8;
+  background: rgb(255 255 255 / 94%);
+  color: #1e293b;
+  box-shadow: 0 8px 18px rgb(15 61 76 / 8%);
+}
+
+.viewer-card.is-scene-light .floor-plan-heading span,
+.viewer-card.is-scene-light .floor-plan-heading small,
+.viewer-card.is-scene-light .floor-plan-tabs button,
+.viewer-card.is-scene-light .environment-point small,
+.viewer-card.is-scene-light .floor-unit-label span,
+.viewer-card.is-scene-light .tower-apt-label span,
+.viewer-card.is-scene-light .canvas-solar-card figcaption,
+.viewer-card.is-scene-light .canvas-solar-card figcaption small,
+.viewer-card.is-scene-light .scene-counter,
+.viewer-card.is-scene-light .availability-legend {
+  color: #64748b;
+}
+
+.viewer-card.is-scene-light .floor-plan-heading strong,
+.viewer-card.is-scene-light .environment-point b,
+.viewer-card.is-scene-light .tower-apt-label strong,
+.viewer-card.is-scene-light .canvas-solar-card figcaption b {
+  color: #0f3d4c;
+}
+
+.viewer-card.is-scene-light .floor-unit-label strong {
+  color: var(--unit-color);
+}
+
+.viewer-card.is-scene-light .floor-unit-label em {
+  border-top-color: #e7e0c8;
+  color: #a16207;
+}
+
+.viewer-card.is-scene-light .site-compass,
+.viewer-card.is-scene-light .orientation-badge {
+  color: #0f3d4c;
+}
+
+.viewer-card.is-scene-light .canvas-turn-sign.is-anticipator {
+  border-color: transparent;
+  background:
+    linear-gradient(165deg, #fff 0%, #fff6df 46%, #fff 100%) padding-box,
+    conic-gradient(from var(--live-angle), #e8c75e, #fff, #f3e2a4, #c8892d, #e8c75e) border-box;
+  color: #6f4500;
+  box-shadow:
+    0 14px 28px rgb(160 106 6 / 16%),
+    inset 0 1px 0 rgb(255 255 255 / 80%);
+  animation: live-frame 9s linear infinite;
+}
+
+.viewer-card.is-scene-light .canvas-turn-sign.is-anticipator .turn-sign-label {
+  color: #8a6a22;
+}
+
+.viewer-card.is-scene-light .canvas-turn-sign.is-draw {
+  border-color: transparent;
+  background:
+    linear-gradient(165deg, #fff 0%, #e9f7fd 50%, #fff 100%) padding-box,
+    conic-gradient(from var(--live-angle), #7ec8e3, #fff, #b9e4f4, #0d6a9c, #7ec8e3) border-box;
+  color: #075985;
+  box-shadow:
+    0 14px 28px rgb(13 106 156 / 14%),
+    inset 0 1px 0 rgb(255 255 255 / 80%);
+  animation: live-frame 9s linear infinite;
+}
+
+.viewer-card.is-scene-light .canvas-turn-sign.is-draw .turn-sign-label {
+  color: #0369a1;
+}
+
+.viewer-card.is-scene-light .canvas-turn-sign.is-idle {
+  border-color: transparent;
+  background:
+    linear-gradient(165deg, #fff, #f4f7fa) padding-box,
+    conic-gradient(from var(--live-angle), #d5dee8, #fff, #b7c6d4, #d5dee8) border-box;
+  color: #53616f;
+  animation: live-frame 9s linear infinite;
+}
+
+.viewer-card.is-scene-light .canvas-turn-sign .turn-next-button {
+  border-color: transparent;
+  background: #0f3d4c;
+  color: #fff;
+}
+
+.viewer-card.is-scene-light .canvas-turn-sign.is-anticipator .turn-next-button {
+  background: #a06a06;
+}
+
+.viewer-card.is-scene-light .canvas-turn-sign.is-draw .turn-next-button {
+  background: #0d6a9c;
+}
+
+.viewer-card.is-scene-light .canvas-turn-sign .drawn-ball-send {
+  background: #0d6a9c;
+  color: #fff;
+}
+
 .canvas-wrap {
   min-height: 0;
   flex: 1;
@@ -936,6 +1085,10 @@ select:focus-visible {
   border-right: 1px solid #203647;
 }
 
+.canvas-wrap.plan-only .floor-plan-view {
+  height: 100%;
+}
+
 .floor-plan-view {
   display: flex;
   flex-direction: column;
@@ -943,10 +1096,7 @@ select:focus-visible {
 }
 
 .floor-plan-view:has(.floor-plan-toolbar) {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
-  grid-template-rows: auto minmax(0, 1fr);
-  column-gap: 8px;
+  display: block;
 }
 
 .floor-plan-stage {
@@ -956,8 +1106,13 @@ select:focus-visible {
 }
 
 .floor-plan-view:has(.floor-plan-toolbar) .floor-plan-stage {
-  grid-column: 1;
-  grid-row: 2;
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+}
+
+.tower-view > div:not(.canvas-turn-sign) {
+  z-index: 1;
 }
 
 .floor-plan-stage > div {
@@ -1135,10 +1290,19 @@ select:focus-visible {
 }
 
 .unit-cell.is-reserved,
-.unit-cell.is-reserved:hover:not(:disabled),
-.unit-cell.is-reserved.is-selected {
+.unit-cell.is-reserved:hover:not(:disabled) {
+  background: #fff6dd;
+  border: 2px solid #f59e0b;
+  color: #6f4500;
+  box-shadow: inset 0 0 0 1px #f59e0b;
+}
+
+.unit-cell.is-selected,
+.unit-cell.is-reserved.is-selected,
+.unit-cell.is-reserved.is-selected:hover:not(:disabled) {
   background: #e7f3fc;
   border: 2px solid #1565b5;
+  color: #0d47a1;
   box-shadow: inset 0 0 0 1px #1565b5;
 }
 
@@ -1303,6 +1467,26 @@ select:focus-visible {
 .is-plan .environment-northeast {
   top: 60px;
   right: 10px;
+}
+
+/* O cartão "Planta ampliada" ocupa o canto superior direito. */
+.floor-plan-view:has(.floor-plan-toolbar) .is-plan .environment-northeast {
+  top: 100px;
+}
+
+.floor-plan-view:has(.floor-plan-sunrise) .is-plan .environment-northeast {
+  top: 200px;
+}
+
+.floor-plan-view:has(.floor-plan-sunrise) .is-plan .environment-east {
+  top: auto;
+  bottom: 68px;
+  transform: none;
+}
+
+.floor-plan-view:has(.floor-plan-toolbar) .is-plan .environment-west {
+  top: 118px;
+  transform: none;
 }
 
 .is-plan .environment-east {
@@ -1717,7 +1901,7 @@ select:focus-visible {
 /* Placa da vez sobre o mapa 3D e sobre a planta ampliada. */
 .canvas-turn-sign {
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   gap: 8px;
   position: absolute;
   z-index: 4;
@@ -1725,7 +1909,7 @@ select:focus-visible {
   left: 14px;
   max-width: min(460px, calc(100% - 210px));
   padding: 8px 11px;
-  border: 1px solid;
+  border: 1.5px solid;
   border-radius: 10px;
   backdrop-filter: blur(9px);
   pointer-events: none;
@@ -1738,12 +1922,14 @@ select:focus-visible {
   align-items: flex-start;
   justify-content: flex-start;
   gap: 8px;
-  position: relative;
-  z-index: 5;
-  grid-column: 1 / -1;
-  grid-row: 1;
+  position: absolute;
+  z-index: 6;
+  top: 10px;
+  right: 10px;
+  left: 10px;
   flex: none;
-  margin: 10px 10px 0;
+  margin: 0;
+  pointer-events: none;
 }
 
 .floor-plan-toolbar .canvas-turn-sign {
@@ -1774,15 +1960,14 @@ select:focus-visible {
 }
 
 .floor-plan-sunrise {
-  position: relative;
-  z-index: 5;
+  position: absolute;
+  z-index: 6;
+  top: 98px;
+  right: 10px;
   display: flex;
   flex-direction: column;
-  grid-column: 2;
-  grid-row: 2;
-  align-self: start;
   gap: 8px;
-  margin: 8px 10px 0 0;
+  margin: 0;
   pointer-events: none;
 }
 
@@ -1859,9 +2044,87 @@ select:focus-visible {
   cursor: default;
 }
 
+.turn-sign-actions {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 6px;
+  pointer-events: auto;
+}
+
+.turn-abdicate-button,
+.turn-abdicate-choice,
+.turn-abdicate-cancel {
+  height: 22px;
+  padding: 0 8px;
+  border: 1px solid rgb(251 113 133 / 55%);
+  border-radius: 999px;
+  background: rgb(127 29 29 / 42%);
+  color: #fecdd3;
+  font: 800 9px/1 'Manrope', sans-serif;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+  white-space: nowrap;
+  cursor: pointer;
+  pointer-events: auto;
+}
+
+.turn-abdicate-button:disabled,
+.turn-abdicate-choice:disabled,
+.turn-abdicate-cancel:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
+.turn-abdicate-choices {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  pointer-events: auto;
+}
+
+.turn-abdicate-prompt,
+.turn-abdicate-error {
+  max-width: 120px;
+  color: inherit;
+  font-size: 8px;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+  line-height: 1.3;
+  text-align: center;
+  text-transform: uppercase;
+}
+
+.turn-abdicate-error {
+  text-transform: none;
+  letter-spacing: 0;
+}
+
+.turn-abdicate-cancel {
+  border-color: rgb(148 163 184 / 45%);
+  background: transparent;
+  color: inherit;
+}
+
 .canvas-turn-sign .turn-next-button {
   height: 26px;
   background: rgb(5 17 29 / 55%);
+}
+
+.viewer-card.is-scene-light .turn-abdicate-button,
+.viewer-card.is-scene-light .turn-abdicate-choice,
+.overview-turn .turn-abdicate-button,
+.overview-turn .turn-abdicate-choice {
+  border-color: #e11d48;
+  background: #fff1f2;
+  color: #9f1239;
+}
+
+.viewer-card.is-scene-light .turn-abdicate-cancel,
+.overview-turn .turn-abdicate-cancel {
+  border-color: #cbd5e1;
+  background: #fff;
+  color: #475569;
 }
 
 .floor-plan-view:has(.floor-plan-toolbar) .floor-plan-tabs {
@@ -1894,19 +2157,68 @@ select:focus-visible {
 }
 
 .canvas-turn-sign.is-anticipator {
-  border-color: rgb(232 199 94 / 55%);
-  background: rgb(46 33 6 / 82%);
-  color: #f6d98a;
+  border-color: transparent;
+  background:
+    linear-gradient(165deg, rgb(8 36 58 / 94%), rgb(4 18 36 / 92%)) padding-box,
+    conic-gradient(from var(--live-angle), #0f766e, #38bdf8, #1d4ed8, #22a699, #0f766e) border-box;
+  color: #e7f6ff;
+  box-shadow:
+    0 14px 28px rgb(0 0 0 / 34%),
+    0 0 24px rgb(56 189 248 / 22%),
+    inset 0 1px 0 rgb(186 230 253 / 24%);
+  animation: live-frame 9s linear infinite;
+}
+
+.canvas-turn-sign.is-anticipator .turn-sign-label {
+  color: #7dd3fc;
 }
 
 .canvas-turn-sign.is-anticipator strong {
-  background: #a06a06;
+  background: #0f766e;
+}
+
+.canvas-turn-sign.is-anticipator .turn-next-button {
+  border-color: transparent;
+  background: #087e78;
+  color: #fff;
+}
+
+.canvas-turn-sign.is-anticipator {
+  --digit: #e7f6ff;
 }
 
 .canvas-turn-sign.is-draw {
-  border-color: rgb(143 205 232 / 55%);
-  background: rgb(6 28 44 / 82%);
+  --digit: #a9dcf5;
+}
+
+.viewer-card.is-scene-light .canvas-turn-sign.is-anticipator,
+.active-turn-strip.is-anticipator,
+.overview-turn.is-anticipator {
+  --digit: #6f4500;
+}
+
+.viewer-card.is-scene-light .canvas-turn-sign.is-draw,
+.active-turn-strip.is-draw,
+.overview-turn.is-draw {
+  --digit: #075985;
+}
+
+.canvas-turn-sign .contract-code .is-ball,
+.active-turn-strip .contract-code .is-ball,
+.overview-turn .contract-code .is-ball {
+  text-shadow:
+    0 0 8px color-mix(in srgb, var(--digit, #e7f6ff) 90%, white),
+    0 0 16px color-mix(in srgb, var(--digit, #e7f6ff) 55%, transparent);
+}
+
+.canvas-turn-sign.is-draw {
+  border-color: transparent;
+  background:
+    linear-gradient(165deg, rgb(8 36 54 / 94%), rgb(4 18 30 / 92%)) padding-box,
+    conic-gradient(from var(--live-angle), #7ec8e3, #fff, #0d6a9c, #7ec8e3) border-box;
   color: #a9dcf5;
+  box-shadow: 0 14px 28px rgb(0 0 0 / 32%);
+  animation: live-frame 9s linear infinite;
 }
 
 .canvas-turn-sign.is-draw strong {
@@ -1914,9 +2226,12 @@ select:focus-visible {
 }
 
 .canvas-turn-sign.is-idle {
-  border-color: rgb(148 170 186 / 40%);
-  background: rgb(9 21 33 / 82%);
+  border-color: transparent;
+  background:
+    linear-gradient(165deg, rgb(16 28 38 / 94%), rgb(8 16 24 / 92%)) padding-box,
+    conic-gradient(from var(--live-angle), #8ea4b4, #fff, #55697a, #8ea4b4) border-box;
   color: #9fb2c0;
+  animation: live-frame 9s linear infinite;
 }
 
 .canvas-turn-sign.is-idle strong {
@@ -2602,6 +2917,73 @@ select:focus-visible {
   font-size: 7px;
 }
 
+.floor-plan-heading,
+.is-plan .environment-point,
+.tower-apt-label,
+.canvas-solar-card {
+  border: 1.5px solid transparent;
+  background:
+    linear-gradient(165deg, rgb(12 28 42 / 94%), rgb(7 18 30 / 90%)) padding-box,
+    conic-gradient(from var(--live-angle), #e8c75e, #7ec8e3, rgb(255 255 255 / 78%), #e8c75e) border-box;
+  box-shadow:
+    0 14px 28px rgb(0 0 0 / 28%),
+    inset 0 1px 0 rgb(255 255 255 / 14%);
+  animation: live-frame 11s linear infinite;
+}
+
+.viewer-card.is-scene-light .floor-plan-heading,
+.viewer-card.is-scene-light .environment-point,
+.viewer-card.is-scene-light .tower-apt-label,
+.viewer-card.is-scene-light .canvas-solar-card {
+  color: #1e293b;
+  background:
+    linear-gradient(165deg, #fff 0%, #f5f9fc 52%, #fff8ee 100%) padding-box,
+    conic-gradient(from var(--live-angle), #e8c75e, #fff, #b7e0ee, #f3d48a, #e8c75e) border-box;
+  box-shadow:
+    0 16px 32px rgb(15 61 76 / 12%),
+    inset 0 1px 0 rgb(255 255 255 / 90%);
+}
+
+.canvas-solar-card {
+  position: relative;
+  isolation: isolate;
+  overflow: hidden;
+}
+
+.canvas-solar-card::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  background: linear-gradient(105deg, transparent 32%, rgb(255 255 255 / 48%) 50%, transparent 68%);
+  transform: translateX(-130%);
+  animation: meter-sheen 5.8s ease-in-out infinite;
+  pointer-events: none;
+}
+
+.canvas-solar-card img,
+.canvas-solar-card figcaption {
+  position: relative;
+  z-index: 0;
+}
+
+.viewer-card.is-scene-light .floor-unit-label.is-selected {
+  box-shadow:
+    0 0 0 1px color-mix(in srgb, var(--unit-color) 70%, white),
+    0 10px 22px color-mix(in srgb, var(--unit-color) 28%, transparent);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .canvas-turn-sign,
+  .floor-plan-heading,
+  .environment-point,
+  .tower-apt-label,
+  .canvas-solar-card,
+  .canvas-solar-card::after {
+    animation: none;
+  }
+}
+
 /* A ilustração fica ancorada na área do modelo para continuar visível
    enquanto o painel lateral é rolado. */
 /* Faixa inferior da área do modelo: espaço livre que não cobre a planta. */
@@ -2632,8 +3014,8 @@ select:focus-visible {
   padding: 5px 7px;
 }
 
-/* As etiquetas do rodapé sobem para liberar a faixa das ilustrações. */
-.floor-plan-view:has(.canvas-solar-stack) .is-plan .environment-south,
+/* O sol poente fica no canto esquerdo. Só a etiqueta desse canto sobe.
+   "Bloco B", no centro do rodapé, permanece embaixo. */
 .floor-plan-view:has(.canvas-solar-stack) .is-plan .environment-southwest,
 .canvas-wrap:has(> .canvas-solar-stack) .environment-south,
 .canvas-wrap:has(> .canvas-solar-stack) .environment-southwest {
@@ -3803,6 +4185,14 @@ select:focus-visible {
   background: var(--status-color);
 }
 
+.modal-hint {
+  margin: 12px 0 0;
+  color: #0d47a1;
+  font-size: 11px;
+  font-weight: 700;
+  line-height: 1.4;
+}
+
 .modal-error {
   margin: 12px 0 0;
   padding: 8px 10px;
@@ -4048,7 +4438,6 @@ select:focus-visible {
     width: 72px;
   }
 
-  .floor-plan-view:has(.canvas-solar-stack) .is-plan .environment-south,
   .floor-plan-view:has(.canvas-solar-stack) .is-plan .environment-southwest,
   .canvas-wrap:has(> .canvas-solar-stack) .environment-south,
   .canvas-wrap:has(> .canvas-solar-stack) .environment-southwest {
@@ -5006,6 +5395,54 @@ select:focus-visible {
   border-color: #b45309;
   background: #fff7ed;
   color: #9a3412;
+}
+
+.abdicate-out-button {
+  border: 1px solid #fca5a5;
+  border-radius: 999px;
+  padding: 4px 8px;
+  background: #fff5f5;
+  color: #b91c1c;
+  font-size: 0.72rem;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.abdicate-out-button:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.board-table-row.is-abdicated {
+  opacity: 0.6;
+}
+
+.board-abdicate-form {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin: 2px 0 8px;
+  padding: 10px 12px;
+  border: 1px solid #fecaca;
+  border-radius: 10px;
+  background: #fff5f5;
+}
+
+.board-abdicate-form > span {
+  flex: 1 1 100%;
+  color: #7f1d1d;
+  font-size: 0.8rem;
+  font-weight: 600;
+}
+
+.board-abdicate-form input {
+  flex: 1 1 220px;
+  min-width: 0;
+  padding: 6px 8px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  font: inherit;
 }
 
 .board-row-actions {

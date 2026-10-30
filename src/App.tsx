@@ -59,11 +59,12 @@ import {
   type BuildingKind,
   type Ending,
 } from './config/building'
-import type { DrawDecline } from './config/drawDeclines'
-import type {
-  AnticipationEntryInput,
-  AnticipationSession,
-  AnticipationSessionInput,
+import type { DrawDecline, DrawDeclineReason } from './config/drawDeclines'
+import {
+  turnCallLabel,
+  type AnticipationEntryInput,
+  type AnticipationSession,
+  type AnticipationSessionInput,
 } from './config/anticipation'
 import {
   buildAssociateCode,
@@ -183,6 +184,9 @@ function App() {
   const [pendingId, setPendingId] = useState<string | null>(null)
   const [pendingExisting, setPendingExisting] = useState(false)
   const [drawBall, setDrawBall] = useState('')
+  /** Código já mandado para a live. A digitação fica só neste computador. */
+  const [liveSentCode, setLiveSentCode] = useState('')
+  const [liveDrawEpoch, setLiveDrawEpoch] = useState(0)
   const [participant, setParticipant] = useState('')
   const [justification, setJustification] = useState('')
   const [modalError, setModalError] = useState('')
@@ -193,6 +197,12 @@ function App() {
     window.localStorage.getItem('evo-coop-scene-theme') === 'light'
       ? 'light'
       : 'dark',
+  )
+  const [canvasLayout, setCanvasLayout] = useState<'both' | 'tower' | 'plan'>(
+    () => {
+      const saved = window.localStorage.getItem('evo-coop-canvas-layout')
+      return saved === 'tower' || saved === 'plan' ? saved : 'both'
+    },
   )
   const [declines, setDeclines] = useState<DrawDecline[]>([])
   const [declineError, setDeclineError] = useState('')
@@ -329,6 +339,14 @@ function App() {
   const selectedApartment = config.apartmentById[selectedId]
   const drawGroups = drawGroupsForBuilding(building)
   const activeDrawGroup = activeDrawGroups[building]
+  const drawReservations = Object.entries(assignments).filter(
+    ([storageId, item]) => {
+      if (!storageId.startsWith(`${building}:`)) return false
+      if (item.choiceSource === 'anticipator') return false
+      if (activeDrawGroup && !item.ball.startsWith(activeDrawGroup)) return false
+      return true
+    },
+  ).length
   const drawnAssociateCode =
     anticipationSession?.status === 'active' &&
     anticipationSession.nextSource === 'draw'
@@ -340,7 +358,10 @@ function App() {
     anticipationSession?.status === 'active' &&
     anticipationSession.nextSource === 'anticipator'
       ? (anticipationSession.nextAnticipator?.associateCode ?? '')
-      : (drawnAssociateCode ?? '')
+      : liveSentCode
+  const publishDrawCode =
+    anticipationSession?.status === 'active' &&
+    (anticipationSession.nextSource === 'anticipator' || liveDrawEpoch > 0)
   const drawnName =
     anticipationSession?.entries.find(
       (entry) => entry.associateCode === drawnAssociateCode,
@@ -409,6 +430,13 @@ function App() {
           }
           setSceneTheme(board.sceneTheme === 'light' ? 'light' : 'dark')
           setShowAvailability(board.highlightAvailability !== false)
+          if (
+            board.canvasLayout === 'both' ||
+            board.canvasLayout === 'tower' ||
+            board.canvasLayout === 'plan'
+          ) {
+            setCanvasLayout(board.canvasLayout)
+          }
           if (/^\d{6}$/.test(board.associateCode)) {
             setDrawBall(board.associateCode.slice(-4))
           }
@@ -468,10 +496,12 @@ function App() {
           building,
           drawGroup: activeDrawGroup,
           associateCode: liveAssociateCode,
+          publishAssociate: publishDrawCode,
           focusApartment: config.apartmentById[selectedId] ? selectedId : '',
           view,
           sceneTheme,
           highlightAvailability: showAvailability,
+          canvasLayout,
         })
         .catch(() => undefined)
     }, 300)
@@ -483,10 +513,12 @@ function App() {
     building,
     activeDrawGroup,
     liveAssociateCode,
+    publishDrawCode,
     selectedId,
     view,
     sceneTheme,
     showAvailability,
+    canvasLayout,
   ])
 
   useEffect(() => {
@@ -527,7 +559,9 @@ function App() {
     edgeLandmarks,
     building,
   )
-  const showFloorPlan = Boolean(config.floorModel && selectedApartment)
+  const floorPlanReady = Boolean(config.floorModel && selectedApartment)
+  const showTower = !floorPlanReady || canvasLayout !== 'plan'
+  const showFloorPlan = floorPlanReady && canvasLayout !== 'tower'
   const solarFigure = (illustration: SolarIllustration) => {
     if (!selectedApartment) return null
     const option = SOLAR_ILLUSTRATION_BY_ID[illustration]
@@ -598,6 +632,89 @@ function App() {
   const showNotice = (message: string) => {
     setNotice(message)
     window.setTimeout(() => setNotice(''), 2600)
+  }
+
+  const sendDrawToLive = () => {
+    if (!drawnAssociateCode || drawnAssociateCode === liveSentCode) return
+    setLiveSentCode(drawnAssociateCode)
+    setLiveDrawEpoch((current) => current + 1)
+    showNotice('Número enviado para a live.')
+  }
+
+  const clearLiveDrawCode = () => {
+    setLiveSentCode('')
+    setLiveDrawEpoch((current) => current + 1)
+  }
+
+  const registerDecline = async (input: {
+    ball: string
+    participant: string
+    source: 'draw' | 'anticipator'
+    reason: DrawDeclineReason
+    notes: string
+    anticipationSessionId?: string
+    anticipationEntryId?: string
+  }) => {
+    setDeclineError('')
+    if (!input.ball) {
+      setDeclineError(
+        activeDrawGroup
+          ? 'Informe uma bolinha entre 1 e 9999.'
+          : 'Informe o código do associado.',
+      )
+      return false
+    }
+    setDeclineBusy(true)
+    try {
+      const created = await api.addDecline({
+        building,
+        ...input,
+      })
+      setDeclines((current) => [created, ...current])
+      showNotice(`Associado ${created.ball} incluído na Lista de Abdicação`)
+      await refreshAnticipation()
+      return true
+    } catch (error) {
+      setDeclineError(
+        error instanceof Error
+          ? error.message
+          : 'Não foi possível registrar.',
+      )
+      return false
+    } finally {
+      setDeclineBusy(false)
+    }
+  }
+
+  const abdicateCurrent = async (
+    reason: Extract<DrawDeclineReason, 'refused' | 'no-answer'>,
+  ) => {
+    if (anticipationSession?.status !== 'active' || anticipationSession.awaitingNext) {
+      return
+    }
+    const source = anticipationSession.nextSource
+    const anticipator = anticipationSession.nextAnticipator
+    const ball =
+      source === 'anticipator'
+        ? (anticipator?.associateCode ?? '')
+        : (drawnAssociateCode ?? '')
+    const saved = await registerDecline({
+      ball,
+      participant:
+        source === 'anticipator'
+          ? (anticipator?.participant ?? '')
+          : drawnName,
+      source,
+      reason,
+      notes: '',
+      anticipationSessionId: anticipationSession.id,
+      anticipationEntryId:
+        source === 'anticipator' ? anticipator?.id : undefined,
+    })
+    if (saved && source === 'draw') {
+      setDrawnBall('')
+      clearLiveDrawCode()
+    }
   }
 
   const clearTestMap = async () => {
@@ -825,6 +942,7 @@ function App() {
       setAnticipationSession(session)
       setDrawBall('')
       setParticipant('')
+      clearLiveDrawCode()
       showNotice(
         session.nextSource === 'anticipator'
           ? 'Plaquinha atualizada: vez do antecipador.'
@@ -968,6 +1086,30 @@ function App() {
       } catch (error) {
         setAnticipationError(
           error instanceof Error ? error.message : 'Não foi possível remover.',
+        )
+      } finally {
+        setAnticipationBusy(false)
+      }
+    },
+    onAbdicateEntry: async (entryId: string, reason: string) => {
+      if (!anticipationSession) return
+      setAnticipationBusy(true)
+      setAnticipationError('')
+      try {
+        setAnticipationSession(
+          await api.abdicateAnticipationEntry(
+            anticipationSession.id,
+            entryId,
+            reason,
+          ),
+        )
+        await refreshMap()
+        showNotice('Abdicação registrada fora da vez. A fila já andou.')
+      } catch (error) {
+        setAnticipationError(
+          error instanceof Error
+            ? error.message
+            : 'Não foi possível registrar a abdicação.',
         )
       } finally {
         setAnticipationBusy(false)
@@ -1352,9 +1494,12 @@ function App() {
         >
           <span className="active-turn-label">Vez atual</span>
           <strong>
-            {anticipationSession.nextSource === 'anticipator'
-              ? 'Antecipador'
-              : 'Sorteio'}
+            {turnCallLabel({
+              source: anticipationSession.nextSource,
+              anticipatorTurnsUsed: anticipationSession.anticipatorTurnsUsed,
+              drawReservations,
+              awaitingNext: anticipationSession.awaitingNext,
+            })}
           </strong>
           {anticipationSession.nextSource === 'draw' &&
           !anticipationSession.awaitingNext ? (
@@ -1364,6 +1509,11 @@ function App() {
               code={drawnAssociateCode}
               name={drawnName}
               onChange={setDrawnBall}
+              onSend={transmission ? undefined : sendDrawToLive}
+              sent={
+                Boolean(drawnAssociateCode) &&
+                drawnAssociateCode === liveSentCode
+              }
             />
           ) : (
             <span className="turn-current-value">
@@ -1458,6 +1608,7 @@ function App() {
                         current ? { ...current, group } : current,
                       )
                       setDrawBall('')
+                      clearLiveDrawCode()
                     }}
                   >
                     {drawGroups.map((group) => (
@@ -1495,6 +1646,39 @@ function App() {
                 >
                   <Compass size={14} /> Entorno
                 </button>
+                {config.floorModel && (
+                  <div
+                    className="scene-theme-switch canvas-layout-switch"
+                    role="group"
+                    aria-label="O que mostrar no mapa"
+                  >
+                    {(
+                      [
+                        ['both', 'Os dois', 'Prédio e planta juntos'],
+                        ['tower', 'Prédio', 'Somente o prédio'],
+                        ['plan', 'Planta', 'Somente a planta'],
+                      ] as const
+                    ).map(([id, label, title]) => (
+                      <button
+                        key={id}
+                        type="button"
+                        className={canvasLayout === id ? 'active' : ''}
+                        aria-pressed={canvasLayout === id}
+                        disabled={transmission}
+                        title={title}
+                        onClick={() => {
+                          setCanvasLayout(id)
+                          window.localStorage.setItem(
+                            'evo-coop-canvas-layout',
+                            id,
+                          )
+                        }}
+                      >
+                        {label}
+                      </button>
+                    ))}
+                  </div>
+                )}
                 <div className="scene-theme-switch" role="group" aria-label="Tema do fundo">
                   <button
                     type="button"
@@ -1536,7 +1720,12 @@ function App() {
               </div>
             </div>
 
-            <div className={`canvas-wrap ${showFloorPlan ? 'split-canvas' : ''}`}>
+            <div
+              className={`canvas-wrap${
+                showTower && showFloorPlan ? ' split-canvas' : ''
+              }${showFloorPlan && !showTower ? ' plan-only' : ''}`}
+            >
+              {showTower && (
               <div className="tower-view">
                 <BuildingScene
                   config={config}
@@ -1561,7 +1750,16 @@ function App() {
                     drawnCode={drawnAssociateCode}
                     drawnName={drawnName}
                     onDrawnBallChange={transmission ? undefined : setDrawnBall}
+                    onSendDraw={transmission ? undefined : sendDrawToLive}
+                    drawSent={
+                      Boolean(drawnAssociateCode) &&
+                      drawnAssociateCode === liveSentCode
+                    }
                     onNext={transmission ? undefined : () => void advanceTurn()}
+                    drawReservations={drawReservations}
+                    onAbdicate={transmission ? undefined : abdicateCurrent}
+                    abdicateBusy={declineBusy}
+                    abdicateError={declineError}
                   />
                 )}
                 {selectedApartment && (
@@ -1629,6 +1827,7 @@ function App() {
                   </div>
                 )}
               </div>
+              )}
               {showFloorPlan && selectedApartment && (
                 <div className="floor-plan-view">
                   <div className="floor-plan-toolbar">
@@ -1641,7 +1840,16 @@ function App() {
                       drawnCode={drawnAssociateCode}
                       drawnName={drawnName}
                       onDrawnBallChange={transmission ? undefined : setDrawnBall}
+                      onSendDraw={transmission ? undefined : sendDrawToLive}
+                      drawSent={
+                        Boolean(drawnAssociateCode) &&
+                        drawnAssociateCode === liveSentCode
+                      }
                       onNext={transmission ? undefined : () => void advanceTurn()}
+                      drawReservations={drawReservations}
+                      onAbdicate={transmission ? undefined : abdicateCurrent}
+                      abdicateBusy={declineBusy}
+                      abdicateError={declineError}
                     />
                     <div className="floor-plan-heading">
                       <div>
@@ -1706,6 +1914,7 @@ function App() {
                     endings={floorPlanEndings}
                     highlightAvailability={showAvailability}
                     sceneTheme={sceneTheme}
+                    framed
                     onSelect={transmission ? () => undefined : selectApartment}
                     onActivate={transmission ? () => undefined : requestApartment}
                   />
@@ -1748,7 +1957,16 @@ function App() {
                 drawnCode={drawnAssociateCode}
                 drawnName={drawnName}
                 onDrawnBallChange={transmission ? undefined : setDrawnBall}
+                onSendDraw={transmission ? undefined : sendDrawToLive}
+                drawSent={
+                  Boolean(drawnAssociateCode) &&
+                  drawnAssociateCode === liveSentCode
+                }
                 onNext={transmission ? undefined : () => void advanceTurn()}
+                drawReservations={drawReservations}
+                onAbdicate={transmission ? undefined : abdicateCurrent}
+                abdicateBusy={declineBusy}
+                abdicateError={declineError}
               />
               <div className="draw-metrics-grid">
                 <article>
@@ -1810,39 +2028,7 @@ function App() {
               busy={declineBusy}
               error={declineError}
               readOnly={transmission}
-              onAdd={async (input) => {
-                setDeclineError('')
-                if (!input.ball) {
-                  setDeclineError(
-                    activeDrawGroup
-                      ? 'Informe uma bolinha entre 1 e 9999.'
-                      : 'Informe o código do associado.',
-                  )
-                  return false
-                }
-                setDeclineBusy(true)
-                try {
-                  const created = await api.addDecline({
-                    building,
-                    ...input,
-                  })
-                  setDeclines((current) => [created, ...current])
-                  showNotice(
-                    `Associado ${created.ball} incluído na Lista de Abdicação`,
-                  )
-                  await refreshAnticipation()
-                  return true
-                } catch (error) {
-                  setDeclineError(
-                    error instanceof Error
-                      ? error.message
-                      : 'Não foi possível registrar.',
-                  )
-                  return false
-                } finally {
-                  setDeclineBusy(false)
-                }
-              }}
+              onAdd={registerDecline}
               onRemove={async (id) => {
                 setDeclineError('')
                 setDeclineBusy(true)
@@ -1950,7 +2136,9 @@ function App() {
                 <Ticket size={16} />
                 {selectedStatus === 'none'
                   ? 'Registrar sorteio desta unidade'
-                  : 'Alterar reserva desta unidade'}
+                  : currentUser.role === 'admin'
+                    ? 'Editar reserva confirmada'
+                    : 'Alterar reserva desta unidade'}
               </button>
               )}
             </section>
@@ -2168,7 +2356,11 @@ function App() {
             <div className="modal-heading">
               <div>
                 <span className="eyebrow">
-                  {pendingExisting ? 'Alterar reserva' : 'Confirmar escolha'}
+                  {pendingExisting
+                    ? currentUser.role === 'admin'
+                      ? 'Editar reserva confirmada'
+                      : 'Alterar reserva'
+                    : 'Confirmar escolha'}
                 </span>
                 <h2 id="assignment-title">Apartamento {pendingId}</h2>
               </div>
@@ -2271,6 +2463,13 @@ function App() {
                 <small>Única situação utilizada no sorteio</small>
               </span>
             </div>
+
+            {pendingExisting && currentUser.role === 'admin' && (
+              <p className="modal-hint">
+                Reserva já confirmada. O contrato e o nome podem ser corrigidos;
+                a justificativa fica no histórico.
+              </p>
+            )}
 
             {pendingExisting && (
               <label className="modal-field justification-field">

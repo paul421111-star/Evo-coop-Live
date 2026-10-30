@@ -7,7 +7,12 @@ export type AnticipationSessionStatus =
   | 'locked'
   | 'active'
   | 'closed'
-export type AnticipationEntryStatus = 'waiting' | 'selected' | 'declined'
+/** `abdicated`: saiu da fila fora da vez e não gasta chamada de antecipador. */
+export type AnticipationEntryStatus =
+  | 'waiting'
+  | 'selected'
+  | 'declined'
+  | 'abdicated'
 export type AnticipationOfferStatus = 'pending' | 'confirmed' | 'withdrawn'
 
 export type AnticipationEntry = {
@@ -129,6 +134,39 @@ export function delinquentGate(
 
 export function oppositeChoiceSource(source: ChoiceSource): ChoiceSource {
   return source === 'anticipator' ? 'draw' : 'anticipator'
+}
+
+/** A chamada que a plaquinha está mostrando: 1º antecipador, 1º sorteado, 2º… */
+export function turnCallLabel(input: {
+  source: ChoiceSource
+  anticipatorTurnsUsed: number
+  drawReservations: number
+  awaitingNext: boolean
+}): string {
+  if (input.source === 'anticipator') {
+    return `${input.anticipatorTurnsUsed + 1}º antecipador`
+  }
+  const n = input.awaitingNext
+    ? Math.max(input.drawReservations, 1)
+    : input.drawReservations + 1
+  return `${n}º sorteado`
+}
+
+/**
+ * Posição de chamada de cada associado no ranking. Quem abdicou fora da vez
+ * não ocupa posição, então o próximo da fila sobe.
+ */
+export function callPositions(
+  entries: ReadonlyArray<{ id: string; status: AnticipationEntryStatus }>,
+): Map<string, number> {
+  const positions = new Map<string, number>()
+  let position = 0
+  for (const entry of entries) {
+    if (entry.status === 'abdicated') continue
+    position += 1
+    positions.set(entry.id, position)
+  }
+  return positions
 }
 
 /**

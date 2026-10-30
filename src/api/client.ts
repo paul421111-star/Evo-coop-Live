@@ -41,6 +41,7 @@ export type LiveBoard = {
   view: 'perspective' | 'front' | 'back' | 'east' | 'west'
   sceneTheme: 'dark' | 'light'
   highlightAvailability: boolean
+  canvasLayout: 'both' | 'tower' | 'plan'
   updatedAt: string
 }
 
@@ -202,10 +203,13 @@ export const api = {
     building: BuildingKind
     drawGroup: string
     associateCode: string
+    /** Só o botão Enviar (ou a vez do antecipador) grava o contrato na live. */
+    publishAssociate?: boolean
     focusApartment: string
     view: LiveBoard['view']
     sceneTheme: LiveBoard['sceneTheme']
     highlightAvailability: boolean
+    canvasLayout: LiveBoard['canvasLayout']
   }) =>
     request<LiveBoard>('/api/live/board', {
       method: 'PUT',
@@ -407,6 +411,18 @@ export const api = {
     request<AnticipationSession>(
       `/api/anticipation-sessions/${encodeURIComponent(sessionId)}/next`,
       { method: 'POST' },
+    ),
+  abdicateAnticipationEntry: (
+    sessionId: string,
+    entryId: string,
+    reason: string,
+  ) =>
+    request<AnticipationSession>(
+      `/api/anticipation-sessions/${encodeURIComponent(sessionId)}/entries/${encodeURIComponent(entryId)}/abdicate`,
+      {
+        method: 'POST',
+        body: JSON.stringify({ reason }),
+      },
     ),
   removeAnticipationEntry: (sessionId: string, entryId: string) =>
     request<void>(

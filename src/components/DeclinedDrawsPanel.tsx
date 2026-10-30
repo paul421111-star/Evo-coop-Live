@@ -54,7 +54,7 @@ export function DeclinedDrawsPanel({
   const [reason, setReason] = useState<DrawDeclineReason>('refused')
   const [notes, setNotes] = useState('')
   const [search, setSearch] = useState('')
-  const [expanded, setExpanded] = useState(false)
+  const [expanded, setExpanded] = useState(readOnly)
   const activeSession =
     anticipationSession?.status === 'active' ? anticipationSession : null
   const lockedAnticipator =

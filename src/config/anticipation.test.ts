@@ -4,6 +4,8 @@ import {
   offerDecisionUntil,
   choiceSourceAfterTurn,
   delinquentGate,
+  turnCallLabel,
+  callPositions,
   oppositeChoiceSource,
   rankAnticipators,
 } from './anticipation'
@@ -68,6 +70,64 @@ describe('ranking dos antecipadores', () => {
   it('alterna antecipador e sorteio', () => {
     expect(oppositeChoiceSource('anticipator')).toBe('draw')
     expect(oppositeChoiceSource('draw')).toBe('anticipator')
+  })
+
+  it('numera a chamada atual de antecipador e de sorteio', () => {
+    expect(
+      turnCallLabel({
+        source: 'anticipator',
+        anticipatorTurnsUsed: 0,
+        drawReservations: 0,
+        awaitingNext: false,
+      }),
+    ).toBe('1º antecipador')
+    expect(
+      turnCallLabel({
+        source: 'draw',
+        anticipatorTurnsUsed: 1,
+        drawReservations: 0,
+        awaitingNext: false,
+      }),
+    ).toBe('1º sorteado')
+    expect(
+      turnCallLabel({
+        source: 'draw',
+        anticipatorTurnsUsed: 1,
+        drawReservations: 1,
+        awaitingNext: true,
+      }),
+    ).toBe('1º sorteado')
+    expect(
+      turnCallLabel({
+        source: 'anticipator',
+        anticipatorTurnsUsed: 1,
+        drawReservations: 1,
+        awaitingNext: false,
+      }),
+    ).toBe('2º antecipador')
+    expect(
+      turnCallLabel({
+        source: 'draw',
+        anticipatorTurnsUsed: 112,
+        drawReservations: 112,
+        awaitingNext: false,
+      }),
+    ).toBe('113º sorteado')
+  })
+
+  it('quem abdica fora da vez sai da numeração e o suplente sobe', () => {
+    const positions = callPositions([
+      { id: 'a', status: 'waiting' },
+      { id: 'b', status: 'abdicated' },
+      { id: 'c', status: 'waiting' },
+      { id: 'd', status: 'declined' },
+      { id: 'e', status: 'waiting' },
+    ])
+    expect(positions.has('b')).toBe(false)
+    expect(positions.get('a')).toBe(1)
+    expect(positions.get('c')).toBe(2)
+    expect(positions.get('d')).toBe(3)
+    expect(positions.get('e')).toBe(4)
   })
 
   it('depois das vagas, contando abdicação, fica só no sorteio', () => {

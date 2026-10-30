@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { Fragment, useState } from 'react'
 import {
   ArrowLeft,
   CalendarClock,
@@ -18,6 +18,7 @@ import {
 } from 'lucide-react'
 import {
   DEFAULT_ANTICIPATOR_SLOTS,
+  callPositions,
   type AnticipationEntryInput,
   type AnticipationHistorySummary,
   type AnticipationSession,
@@ -52,6 +53,7 @@ type Props = {
     delinquentCanParticipate?: boolean
   }) => Promise<void>
   onMarkDelinquent: (entryId: string, delinquent: boolean) => Promise<void>
+  onAbdicateEntry: (entryId: string, reason: string) => Promise<void>
   onOpenMap: () => void
 }
 
@@ -97,8 +99,11 @@ export function RankingBoard({
   onSaveConfirmationDeadline,
   onDelinquentPolicy,
   onMarkDelinquent,
+  onAbdicateEntry,
   onOpenMap,
 }: Props) {
+  const [abdicatingId, setAbdicatingId] = useState<string | null>(null)
+  const [abdicateReason, setAbdicateReason] = useState('Abdicou fora da vez')
   const [title, setTitle] = useState('')
   const [liveUrl, setLiveUrl] = useState('')
   const [startsAt, setStartsAt] = useState(defaultStart)
@@ -121,11 +126,15 @@ export function RankingBoard({
   const scope = `${BUILDING_CONFIGS[building].label}${
     drawGroup ? ` · Grupo ${drawGroup}` : ''
   } · ${eventBlock}`
+  // Abdicados fora da vez saem da fila: não ocupam vaga nem recebem número.
+  const callableEntries = (session?.entries ?? []).filter(
+    (item) => item.status !== 'abdicated',
+  )
   const inQuota = Math.min(
-    session?.entries.length ?? 0,
+    callableEntries.length,
     session?.anticipatorSlots ?? 0,
   )
-  const outQuota = (session?.entries.length ?? 0) - inQuota
+  const outQuota = callableEntries.length - inQuota
   const suggestedTitle = `Antecipação · ${scope}`
   const suggestedBlock = eventBlock
   const sessionTitle = title.trim() || suggestedTitle
@@ -136,7 +145,7 @@ export function RankingBoard({
   const orderLocked =
     session?.status === 'locked' || session?.status === 'active'
   const rankedAnticipators = orderLocked
-    ? session.entries.slice(0, session.anticipatorSlots)
+    ? callableEntries.slice(0, session.anticipatorSlots)
     : []
   const callOrder = Array.from({ length: CALL_ORDER_TOTAL }, (_, index) => {
     const anticipator = index % 2 === 0
@@ -208,6 +217,7 @@ export function RankingBoard({
     }
   }
 
+  const callPositionById = callPositions(session?.entries ?? [])
   const entryValid =
     /^\d{6}$/.test(entry.associateCode) &&
     /^\d{5}$/.test(entry.documentTail ?? '') &&
@@ -828,16 +838,21 @@ export function RankingBoard({
                   <span>Situação</span>
                   <span />
                 </div>
-                {session.entries.map((item, index) => (
+                {session.entries.map((item) => {
+                  const position = callPositionById.get(item.id)
+                  return (
+                  <Fragment key={item.id}>
                   <div
                     className={`board-table-row is-${item.status}${
-                      index < session.anticipatorSlots
-                        ? ' is-anticipator'
-                        : ' is-outside'
-                    }${index === session.anticipatorSlots - 1 ? ' is-cut' : ''}`}
-                    key={item.id}
+                      item.status === 'abdicated'
+                        ? ' is-abdicated'
+                        : position !== undefined &&
+                            position <= session.anticipatorSlots
+                          ? ' is-anticipator'
+                          : ' is-outside'
+                    }${position === session.anticipatorSlots ? ' is-cut' : ''}`}
                   >
-                    <b>{index + 1}</b>
+                    <b>{position ?? '—'}</b>
                     <span className="board-person">
                       <strong>{item.associateCode}</strong>
                     </span>
@@ -862,6 +877,8 @@ export function RankingBoard({
                         ? `Apartamento ${item.apartmentId}`
                         : item.status === 'declined'
                           ? 'Abdicou'
+                          : item.status === 'abdicated'
+                            ? 'Abdicou fora da vez'
                           : item.offerStatus === 'confirmed'
                             ? 'Confirmado'
                             : item.offerStatus === 'withdrawn'
@@ -870,6 +887,24 @@ export function RankingBoard({
                     </span>
                     {admin && session.status !== 'closed' ? (
                       <span className="board-row-actions">
+                        {session.status === 'active' &&
+                          item.status === 'waiting' &&
+                          !(
+                            session.nextSource === 'anticipator' &&
+                            session.nextAnticipator?.id === item.id
+                          ) && (
+                            <button
+                              type="button"
+                              className="abdicate-out-button"
+                              disabled={busy || abdicatingId === item.id}
+                              onClick={() => {
+                                setAbdicatingId(item.id)
+                                setAbdicateReason('Abdicou fora da vez')
+                              }}
+                            >
+                              Abdicou
+                            </button>
+                          )}
                         <button
                           type="button"
                           className={`delinquent-mark${item.delinquent ? ' is-on' : ''}`}
@@ -898,7 +933,41 @@ export function RankingBoard({
                       <span />
                     )}
                   </div>
-                ))}
+                  {abdicatingId === item.id && (
+                    <div className="board-abdicate-form">
+                      <span>
+                        {item.associateCode} sai da fila. Quem está logo depois sobe e nenhuma chamada é gasta.
+                      </span>
+                      <input
+                        value={abdicateReason}
+                        maxLength={240}
+                        placeholder="Justificativa"
+                        onChange={(event) => setAbdicateReason(event.target.value)}
+                      />
+                      <button
+                        type="button"
+                        className="primary-button"
+                        disabled={busy || !abdicateReason.trim()}
+                        onClick={() =>
+                          void onAbdicateEntry(item.id, abdicateReason.trim()).then(
+                            () => setAbdicatingId(null),
+                          )
+                        }
+                      >
+                        Confirmar abdicação
+                      </button>
+                      <button
+                        type="button"
+                        className="secondary-button"
+                        onClick={() => setAbdicatingId(null)}
+                      >
+                        Cancelar
+                      </button>
+                    </div>
+                  )}
+                  </Fragment>
+                  )
+                })}
               </div>
             ) : (
               <p className="board-empty">
